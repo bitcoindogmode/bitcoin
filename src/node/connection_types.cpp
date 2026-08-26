@@ -18,6 +18,8 @@ std::string ConnectionTypeAsString(ConnectionType conn_type)
         return "outbound-full-relay";
     case ConnectionType::BLOCK_RELAY:
         return "block-relay-only";
+    case ConnectionType::DOG_RELAY:
+        return "dog-relay";
     case ConnectionType::ADDR_FETCH:
         return "addr-fetch";
     case ConnectionType::PRIVATE_BROADCAST:

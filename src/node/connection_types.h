@@ -77,6 +77,14 @@ enum class ConnectionType {
     ADDR_FETCH,
 
     /**
+     * DOG relay connections are long-lived outbound connections reserved for
+     * peers that advertise NODE_DOG_RELAY, used so that transactions which are
+     * standard under DOG Mode policy but not under Core policy can still find
+     * a path across the network.
+     */
+    DOG_RELAY,
+
+    /**
      * Private broadcast connections are short-lived and only opened to
      * privacy networks (Tor, I2P) for relaying privacy-sensitive data (like
      * our own transactions) and closed afterwards.
