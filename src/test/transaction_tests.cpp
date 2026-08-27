@@ -921,20 +921,29 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     }
 
     // Check tx-size (non-standard if transaction weight is > MAX_STANDARD_TX_WEIGHT)
+    // Sized from the policy constant rather than hardcoded, so the arithmetic
+    // here does not have to be rewritten if MAX_STANDARD_TX_WEIGHT changes.
+    // Verified to hold at both 400,000 and 3,900,000.
     t.vin.clear();
-    t.vin.resize(2438); // size per input (empty scriptSig): 41 bytes
-    t.vout[0].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(19, 0); // output size: 30 bytes
-    // tx header:                12 bytes =>     48 weight units
-    // 2438 inputs: 2438*41 = 99958 bytes => 399832 weight units
-    //    1 output:              30 bytes =>    120 weight units
-    //                      ======================================
-    //                                total: 400000 weight units
-    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), 400000);
+    constexpr unsigned int header_bytes{12};
+    constexpr unsigned int input_bytes{41};  // per input, empty scriptSig
+    // 8 value + 1 scriptPubKey length + OP_RETURN + single-byte push prefix
+    constexpr unsigned int output_overhead{11};
+    constexpr unsigned int min_output_bytes{30};
+    const unsigned int target_bytes{MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR};
+    const unsigned int n_inputs{(target_bytes - header_bytes - min_output_bytes) / input_bytes};
+    // Whatever is left after the header and inputs becomes the OP_RETURN
+    // payload, so the transaction lands on the ceiling exactly.
+    const unsigned int payload_bytes{target_bytes - header_bytes - n_inputs * input_bytes - output_overhead};
+    BOOST_REQUIRE(payload_bytes <= 75);  // keeps the push prefix a single byte
+    t.vin.resize(n_inputs);
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(payload_bytes, 0);
+    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), MAX_STANDARD_TX_WEIGHT);
     CheckIsStandard(t);
 
-    // increase output size by one byte, so we end up with 400004 weight units
-    t.vout[0].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(20, 0); // output size: 31 bytes
-    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), 400004);
+    // increase output size by one byte, so we end up one weight unit over
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(payload_bytes + 1, 0);
+    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), MAX_STANDARD_TX_WEIGHT + WITNESS_SCALE_FACTOR);
     CheckIsNotStandard(t, "tx-size");
 
     // Check bare multisig (standard if policy flag g_bare_multi is set)
