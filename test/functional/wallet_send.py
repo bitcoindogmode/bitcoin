@@ -549,17 +549,20 @@ class WalletSendTest(BitcoinTestFramework):
 
         # 1) Try to fund transaction only using the preset inputs
         inputs = wallet.listunspent()
+        # Pin max_tx_weight at Core v31.1's 400k so this fixture stays small.
+        # The default ceiling is now 3.9M WU and would need ~14k legacy inputs.
+        max_tx_weight = 400_000
         assert_raises_rpc_error(-4, "Transaction too large",
-                                wallet.send, outputs=[{wallet.getnewaddress(): 0.1 * 1471}], options={"inputs": inputs, "add_inputs": False})
+                                wallet.send, outputs=[{wallet.getnewaddress(): 0.1 * 1471}], options={"inputs": inputs, "add_inputs": False, "max_tx_weight": max_tx_weight})
 
         # 2) Let the wallet fund the transaction
         assert_raises_rpc_error(-4, "The inputs size exceeds the maximum weight. Please try sending a smaller amount or manually consolidating your wallet's UTXOs",
-                                wallet.send, outputs=[{wallet.getnewaddress(): 0.1 * 1471}])
+                                wallet.send, outputs=[{wallet.getnewaddress(): 0.1 * 1471}], options={"max_tx_weight": max_tx_weight})
 
         # 3) Pre-select some inputs and let the wallet fill-up the remaining amount
         inputs = inputs[0:1000]
         assert_raises_rpc_error(-4, "The combination of the pre-selected inputs and the wallet automatic inputs selection exceeds the transaction maximum weight. Please try sending a smaller amount or manually consolidating your wallet's UTXOs",
-                                wallet.send, outputs=[{wallet.getnewaddress(): 0.1 * 1471}], options={"inputs": inputs, "add_inputs": True})
+                                wallet.send, outputs=[{wallet.getnewaddress(): 0.1 * 1471}], options={"inputs": inputs, "add_inputs": True, "max_tx_weight": max_tx_weight})
 
         self.nodes[1].unloadwallet("test_weight_limits")
 

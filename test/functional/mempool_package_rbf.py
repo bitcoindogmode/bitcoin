@@ -10,7 +10,7 @@ from test_framework.messages import (
     MAX_BIP125_RBF_SEQUENCE,
 )
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.mempool_util import fill_mempool
+from test_framework.mempool_util import fill_mempool, SMALL_MEMPOOL_ARGS
 from test_framework.util import (
     assert_greater_than_or_equal,
     assert_equal,
@@ -32,9 +32,7 @@ class PackageRBFTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.setup_clean_chain = True
         # Required for fill_mempool()
-        self.extra_args = [[
-            "-maxmempool=5",
-        ]] * self.num_nodes
+        self.extra_args = [SMALL_MEMPOOL_ARGS] * self.num_nodes
 
     def assert_mempool_contents(self, expected=None):
         mempool_util.assert_mempool_contents(self, self.nodes[0], expected, sync=False)

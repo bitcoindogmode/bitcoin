@@ -33,8 +33,9 @@ static constexpr unsigned int DEFAULT_COINBASE_OUTPUT_MAX_ADDITIONAL_SIGOPS{400}
 static constexpr unsigned int MINIMUM_BLOCK_RESERVED_WEIGHT{2000};
 /** Default for -blockmintxfee, which sets the minimum feerate for a transaction in blocks created by mining code **/
 static constexpr unsigned int DEFAULT_BLOCK_MIN_TX_FEE{1};
-/** The maximum weight for transactions we're willing to relay/mine */
-static constexpr int32_t MAX_STANDARD_TX_WEIGHT{400000};
+/** The maximum weight for transactions we're willing to relay/mine.
+ * DOG Mode: 3.9M WU so a single standard tx can fill nearly a whole block. */
+static constexpr int32_t MAX_STANDARD_TX_WEIGHT{3'900'000};
 /** The minimum non-witness size for transactions we're willing to relay/mine: one larger than 64  */
 static constexpr unsigned int MIN_STANDARD_TX_NONWITNESS_SIZE{65};
 /** Maximum number of signature check operations in an IsStandard() P2SH script */
@@ -61,16 +62,18 @@ static constexpr unsigned int MAX_STANDARD_P2WSH_SCRIPT_SIZE{3600};
 static constexpr unsigned int MAX_STANDARD_SCRIPTSIG_SIZE{1650};
 /** Min feerate for defining dust.
  * Changing the dust limit changes which transactions are
- * standard and should be done with care and ideally rarely. It makes sense to
- * only increase the dust limit after prior releases were already not creating
- * outputs below the new threshold */
-static constexpr unsigned int DUST_RELAY_TX_FEE{3000};
+ * standard and should be done with care and ideally rarely.
+ * DOG Mode default is 0 sat/kvB, which yields a 1-sat floor on standard
+ * output types. Operators can restore Core's 3000 sat/kvB with -dustrelayfee. */
+static constexpr unsigned int DUST_RELAY_TX_FEE{0};
 /** Default for -minrelaytxfee, minimum relay fee for transactions */
 static constexpr unsigned int DEFAULT_MIN_RELAY_TX_FEE{100};
 /** Maximum number of transactions per cluster (default) */
 static constexpr unsigned int DEFAULT_CLUSTER_LIMIT{64};
-/** Maximum size of cluster in virtual kilobytes */
-static constexpr unsigned int DEFAULT_CLUSTER_SIZE_LIMIT_KVB{101};
+/** Maximum size of cluster in virtual kilobytes.
+ * Must satisfy MAX_PACKAGE_WEIGHT <= this * WITNESS_SCALE_FACTOR * 1000.
+ * Flatten() also requires -maxmempool >= this * 1000 vB * 40. */
+static constexpr unsigned int DEFAULT_CLUSTER_SIZE_LIMIT_KVB{976};
 /** Default for -limitancestorcount, max number of in-mempool ancestors */
 static constexpr unsigned int DEFAULT_ANCESTOR_LIMIT{25};
 /** Default for -limitdescendantcount, max number of in-mempool descendants */
@@ -79,8 +82,11 @@ static constexpr unsigned int DEFAULT_DESCENDANT_LIMIT{25};
 static const bool DEFAULT_ACCEPT_DATACARRIER = true;
 /**
  * Default setting for -datacarriersize in vbytes.
+ * Intentionally not derived from MAX_STANDARD_TX_WEIGHT: raising the standard
+ * tx weight to 3.9M WU would otherwise silently lift this to 975,000 vB.
+ * This keeps Core v31.1's 100,000 vB default; change it here if that is wanted.
  */
-static const unsigned int MAX_OP_RETURN_RELAY = MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR;
+static constexpr unsigned int MAX_OP_RETURN_RELAY{100'000};
 /**
  * An extra transaction can be added to a package, as long as it only has one
  * ancestor and is no larger than this. Not really any reason to make this

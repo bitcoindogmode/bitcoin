@@ -777,7 +777,8 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
 
     CheckIsStandard(t);
 
-    // Check dust with default relay fee:
+    // Check dust with Core's historical 3000 sat/kvB relay fee (DOG Mode default is 0):
+    g_dust = CFeeRate{3000};
     CAmount nDustThreshold = 182 * g_dust.GetFeePerK() / 1000;
     BOOST_CHECK_EQUAL(nDustThreshold, 546);
 
@@ -821,6 +822,9 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     t.vout[0].nValue = 674;
     CheckIsStandard(t);
     g_dust = CFeeRate{DUST_RELAY_TX_FEE};
+    BOOST_CHECK_EQUAL(DUST_RELAY_TX_FEE, 0);
+    t.vout[0].nValue = 1;
+    CheckIsStandard(t); // 1-sat P2PKH is standard at the DOG Mode default
 
     t.vout[0].scriptPubKey = CScript() << OP_1;
     CheckIsNotStandard(t, "scriptpubkey");
@@ -920,21 +924,23 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
         CheckIsStandard(t);
     }
 
-    // Check tx-size (non-standard if transaction weight is > MAX_STANDARD_TX_WEIGHT)
+    // Check tx-size (non-standard if transaction weight is > MAX_STANDARD_TX_WEIGHT).
+    // Pad with empty-scriptSig inputs (41 bytes / 164 WU each) so the tx stays
+    // datacarrier-standard at the 100k OP_RETURN default.
     t.vin.clear();
-    t.vin.resize(2438); // size per input (empty scriptSig): 41 bytes
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(19, 0); // output size: 30 bytes
-    // tx header:                12 bytes =>     48 weight units
-    // 2438 inputs: 2438*41 = 99958 bytes => 399832 weight units
-    //    1 output:              30 bytes =>    120 weight units
-    //                      ======================================
-    //                                total: 400000 weight units
-    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), 400000);
+    constexpr int32_t kInputBytes{41};
+    constexpr int32_t kHeaderAndOutputBytes{12 + 30};
+    const int32_t target_bytes{MAX_STANDARD_TX_WEIGHT / WITNESS_SCALE_FACTOR};
+    const int32_t n_inputs{(target_bytes - kHeaderAndOutputBytes) / kInputBytes};
+    t.vin.resize(n_inputs);
+    const int32_t exact_weight{GetTransactionWeight(CTransaction(t))};
+    BOOST_CHECK_LE(exact_weight, MAX_STANDARD_TX_WEIGHT);
+    BOOST_CHECK_GT(exact_weight, MAX_STANDARD_TX_WEIGHT - kInputBytes * WITNESS_SCALE_FACTOR);
     CheckIsStandard(t);
 
-    // increase output size by one byte, so we end up with 400004 weight units
-    t.vout[0].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(20, 0); // output size: 31 bytes
-    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), 400004);
+    t.vin.resize(n_inputs + 1);
+    BOOST_CHECK_GT(GetTransactionWeight(CTransaction(t)), MAX_STANDARD_TX_WEIGHT);
     CheckIsNotStandard(t, "tx-size");
 
     // Check bare multisig (standard if policy flag g_bare_multi is set)
@@ -951,6 +957,10 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     // Add dust outputs up to allowed maximum
     assert(t.vout.size() == 1);
     t.vout.insert(t.vout.end(), MAX_DUST_OUTPUTS_PER_TX, {0, t.vout[0].scriptPubKey});
+
+    // Dust floors below are Core's historical 3000 sat/kvB values, not the
+    // DOG Mode default of 0.
+    g_dust = CFeeRate{3000};
 
     // Check compressed P2PK outputs dust threshold (must have leading 02 or 03)
     t.vout[0].scriptPubKey = CScript() << std::vector<unsigned char>(33, 0x02) << OP_CHECKSIG;

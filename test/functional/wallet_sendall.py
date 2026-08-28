@@ -34,6 +34,7 @@ class SendallTest(BitcoinTestFramework):
         getcontext().prec=10
         self.num_nodes = 1
         self.setup_clean_chain = True
+        self.extra_args = [["-dustrelayfee=0.00003000"]]  # pin Core's historical dust floor; this file tests wallet dust UX
 
     def assert_balance_swept_completely(self, tx, balance):
         output_sum = sum([o["value"] for o in tx["decoded"]["vout"]])

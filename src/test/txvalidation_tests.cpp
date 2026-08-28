@@ -120,8 +120,8 @@ BOOST_FIXTURE_TEST_CASE(ephemeral_tests, RegTestingSetup)
     TxValidationState child_state;
     Wtxid child_wtxid;
 
-    // Arbitrary non-0 feerate for these tests
-    CFeeRate dustrelay(DUST_RELAY_TX_FEE);
+    // Arbitrary non-0 feerate for these tests (DOG Mode default dust relay fee is 0)
+    CFeeRate dustrelay{3000};
 
     // Basic transaction with dust
     auto grandparent_tx_1 = make_ephemeral_tx(random_outpoints(1), /*version=*/2);

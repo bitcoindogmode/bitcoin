@@ -34,7 +34,10 @@ DEFAULT_MIN_RELAY_TX_FEE = 100
 # Default for -incrementalrelayfee in sat/kvB
 DEFAULT_INCREMENTAL_RELAY_FEE = 100
 DEFAULT_CLUSTER_LIMIT = 64
-DEFAULT_CLUSTER_SIZE_LIMIT_KVB = 101
+DEFAULT_CLUSTER_SIZE_LIMIT_KVB = 976
+# Core v31.1 cluster default. Pin this with -maxmempool=5 so Flatten() still allows a 5 MB mempool.
+CORE_V31_CLUSTER_SIZE_LIMIT_KVB = 101
+SMALL_MEMPOOL_ARGS = [f"-maxmempool=5", f"-limitclustersize={CORE_V31_CLUSTER_SIZE_LIMIT_KVB}"]
 
 TRUC_MAX_VSIZE = 10000
 TRUC_CHILD_MAX_VSIZE = 1000
@@ -59,7 +62,7 @@ def fill_mempool(test_framework, node, *, tx_sync_fun=None):
     """Fill mempool until eviction.
 
     Allows for simpler testing of scenarios with floating mempoolminfee > minrelay
-    Requires -maxmempool=5.
+    Requires -maxmempool=5 and -limitclustersize=101 (see SMALL_MEMPOOL_ARGS).
     To avoid unintentional tx dependencies, the mempool filling txs are created with a
     tagged ephemeral miniwallet instance.
     """

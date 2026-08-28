@@ -325,7 +325,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         )
         tx = tx_from_hex(raw_tx_reference)
         output_p2sh_burn = CTxOut(nValue=540, scriptPubKey=script_to_p2sh_script(b'burn'))
-        num_scripts = 100000 // len(output_p2sh_burn.serialize())  # Use enough outputs to make the tx too large for our policy
+        num_scripts = MAX_STANDARD_TX_WEIGHT // (4 * len(output_p2sh_burn.serialize())) + 1  # enough outputs to exceed standard tx weight
         tx.vout = [output_p2sh_burn] * num_scripts
         self.check_mempool_result(
             result_expected=[{'txid': tx.txid_hex, 'allowed': False, 'reject-reason': 'tx-size'}],
@@ -333,10 +333,11 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         )
         tx = tx_from_hex(raw_tx_reference)
         tx.vout[0] = output_p2sh_burn
-        tx.vout[0].nValue -= 1  # Make output smaller, such that it is dust for our policy
+        tx.vout[0].nValue = 1  # 1-sat is not dust at the DOG Mode default of -dustrelayfee=0
         self.check_mempool_result(
-            result_expected=[{'txid': tx.txid_hex, 'allowed': False, 'reject-reason': 'dust'}],
+            result_expected=[{'txid': tx.txid_hex, 'allowed': True, 'vsize': tx.get_vsize(), 'fees': {'base': Decimal('0.1') - Decimal('0.00000001')}}],
             rawtxs=[tx.serialize().hex()],
+            maxfeerate=0,
         )
 
         # OP_RETURN followed by non-push
@@ -370,18 +371,14 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
             rawtxs=[tx.serialize().hex()],
         )
 
-        self.log.info("A transaction with an OP_RETURN output that bumps into the max standardness tx size.")
+        self.log.info("A transaction padded to the max standardness tx size (not via OP_RETURN; datacarrier stays 100k).")
         tx = tx_from_hex(raw_tx_reference)
-        tx.vout[0].scriptPubKey = CScript([OP_RETURN])
-        data_len = int(MAX_STANDARD_TX_WEIGHT / 4) - tx.get_vsize() - 5 - 4  # -5 for PUSHDATA4 and -4 for script size
-        tx.vout[0].scriptPubKey = CScript([OP_RETURN, b"\xff" * (data_len)])
-        assert_equal(tx.get_vsize(), int(MAX_STANDARD_TX_WEIGHT / 4))
-        self.check_mempool_result(
-            result_expected=[{"txid": tx.txid_hex, "allowed": True, "vsize": tx.get_vsize(), "fees": {"base": Decimal("0.1") - Decimal("0.05")}}],
-            rawtxs=[tx.serialize().hex()],
-        )
-        tx.vout[0].scriptPubKey = CScript([OP_RETURN, b"\xff" * (data_len + 1)])
-        assert_greater_than(tx.get_vsize(), int(MAX_STANDARD_TX_WEIGHT / 4))
+        pad_out = CTxOut(nValue=0, scriptPubKey=script_to_p2sh_script(b'pad'))
+        pad_bytes = len(pad_out.serialize())
+        # Fill until just at or under the standard weight ceiling, then add one more to exceed it.
+        while (tx.get_weight() + pad_bytes * 4) <= MAX_STANDARD_TX_WEIGHT:
+            tx.vout.append(pad_out)
+        assert_greater_than(tx.get_weight(), MAX_STANDARD_TX_WEIGHT)
         self.check_mempool_result(
             result_expected=[{"txid": tx.txid_hex, "allowed": False, "reject-reason": "tx-size"}],
             rawtxs=[tx.serialize().hex()],

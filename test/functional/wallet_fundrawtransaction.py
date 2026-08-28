@@ -10,6 +10,7 @@ from itertools import product
 from math import ceil
 from test_framework.address import address_to_scriptpubkey
 
+from test_framework.blocktools import MAX_STANDARD_TX_WEIGHT
 from test_framework.descriptors import descsum_create
 from test_framework.messages import (
     COIN,
@@ -1025,7 +1026,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.generate(self.nodes[0], 10)
         assert_raises_rpc_error(-4, "The inputs size exceeds the maximum weight. "
                                     "Please try sending a smaller amount or manually consolidating your wallet's UTXOs",
-                                recipient.fundrawtransaction, rawtx)
+                                recipient.fundrawtransaction, rawtx, max_tx_weight=400_000)
         self.nodes[0].unloadwallet("large")
 
     def test_external_inputs(self):
@@ -1060,7 +1061,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, "Invalid parameter, missing weight key", wallet.fundrawtransaction, raw_tx, input_weights=[{"txid": ext_utxo["txid"], "vout": ext_utxo["vout"]}])
         assert_raises_rpc_error(-8, "Invalid parameter, weight cannot be less than 165", wallet.fundrawtransaction, raw_tx, input_weights=[{"txid": ext_utxo["txid"], "vout": ext_utxo["vout"], "weight": 164}])
         assert_raises_rpc_error(-8, "Invalid parameter, weight cannot be less than 165", wallet.fundrawtransaction, raw_tx, input_weights=[{"txid": ext_utxo["txid"], "vout": ext_utxo["vout"], "weight": -1}])
-        assert_raises_rpc_error(-8, "Invalid parameter, weight cannot be greater than", wallet.fundrawtransaction, raw_tx, input_weights=[{"txid": ext_utxo["txid"], "vout": ext_utxo["vout"], "weight": 400001}])
+        assert_raises_rpc_error(-8, "Invalid parameter, weight cannot be greater than", wallet.fundrawtransaction, raw_tx, input_weights=[{"txid": ext_utxo["txid"], "vout": ext_utxo["vout"], "weight": MAX_STANDARD_TX_WEIGHT + 1}])
 
         # But funding should work when the solving data is provided
         funded_tx = wallet.fundrawtransaction(raw_tx, solving_data={"pubkeys": [addr_info['pubkey']], "scripts": [addr_info["embedded"]["scriptPubKey"]]})
@@ -1323,23 +1324,24 @@ class RawTransactionsTest(BitcoinTestFramework):
         txid = self.nodes[0].send(outputs=outputs, change_position=0, fee_rate=self.fee_rate_sats_per_vb)["txid"]
         self.generate(self.nodes[0], 1)
 
-        # 272 WU per input (273 when high-s); picking 1471 inputs will exceed the max standard tx weight.
+        # Pin max_tx_weight at Core v31.1's 400k so this fixture stays small.
+        max_tx_weight = 400_000
         rawtx = wallet.createrawtransaction([], [{wallet.getnewaddress(): 0.1 * 1471}])
 
         # 1) Try to fund transaction only using the preset inputs (pick all 1472 inputs to cover the fee)
         input_weights = []
         for i in range(1, 1473):  # skip first output as it is the parent tx change output
             input_weights.append({"txid": txid, "vout": i, "weight": 273})
-        assert_raises_rpc_error(-4, "Transaction too large", wallet.fundrawtransaction, hexstring=rawtx, input_weights=input_weights)
+        assert_raises_rpc_error(-4, "Transaction too large", wallet.fundrawtransaction, hexstring=rawtx, input_weights=input_weights, max_tx_weight=max_tx_weight)
 
         # 2) Let the wallet fund the transaction
         assert_raises_rpc_error(-4, "The inputs size exceeds the maximum weight. Please try sending a smaller amount or manually consolidating your wallet's UTXOs",
-                                wallet.fundrawtransaction, hexstring=rawtx)
+                                wallet.fundrawtransaction, hexstring=rawtx, max_tx_weight=max_tx_weight)
 
         # 3) Pre-select some inputs and let the wallet fill-up the remaining amount
         inputs = input_weights[0:1000]
         assert_raises_rpc_error(-4, "The combination of the pre-selected inputs and the wallet automatic inputs selection exceeds the transaction maximum weight. Please try sending a smaller amount or manually consolidating your wallet's UTXOs",
-                                wallet.fundrawtransaction, hexstring=rawtx, input_weights=inputs)
+                                wallet.fundrawtransaction, hexstring=rawtx, input_weights=inputs, max_tx_weight=max_tx_weight)
 
         self.nodes[2].unloadwallet("test_weight_limits")
 

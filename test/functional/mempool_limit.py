@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from test_framework.mempool_util import (
     fill_mempool,
+    SMALL_MEMPOOL_ARGS,
 )
 from test_framework.p2p import P2PTxInvStore
 from test_framework.test_framework import BitcoinTestFramework
@@ -28,9 +29,7 @@ class MempoolLimitTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
-        self.extra_args = [[
-            "-maxmempool=5",
-        ]]
+        self.extra_args = [SMALL_MEMPOOL_ARGS]
 
     def test_mid_package_eviction_success(self):
         node = self.nodes[0]
@@ -279,9 +278,10 @@ class MempoolLimitTest(BitcoinTestFramework):
         for wtxid in [tx_parent_just_below["wtxid"], tx_child_just_above["wtxid"]]:
             assert_equal(res["tx-results"][wtxid]["error"], "mempool full")
 
-        self.log.info('Test passing a value below the minimum (5 MB) to -maxmempool throws an error')
+        self.log.info('Test passing a value below the Flatten() floor to -maxmempool throws an error')
         self.stop_node(0)
-        self.nodes[0].assert_start_raises_init_error(["-maxmempool=4"], "Error: -maxmempool must be at least 5 MB")
+        self.nodes[0].assert_start_raises_init_error(["-maxmempool=4"], "Error: -maxmempool must be at least 40 MB")
+        self.nodes[0].assert_start_raises_init_error(["-maxmempool=4", "-limitclustersize=101"], "Error: -maxmempool must be at least 5 MB")
 
         self.test_mid_package_eviction_success()
         self.test_mid_package_replacement()

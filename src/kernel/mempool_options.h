@@ -15,10 +15,18 @@
 
 class ValidationSignals;
 
+/** Flatten() requires -maxmempool >= cluster_size_vbytes * this factor. */
+static constexpr unsigned int MEMPOOL_CLUSTER_MEMORY_FACTOR{40};
+/** Minimum -maxmempool in MB implied by DEFAULT_CLUSTER_SIZE_LIMIT_KVB and Flatten(). */
+static constexpr unsigned int MIN_MAX_MEMPOOL_SIZE_MB{
+    static_cast<unsigned int>((static_cast<uint64_t>(DEFAULT_CLUSTER_SIZE_LIMIT_KVB) * 1'000 * MEMPOOL_CLUSTER_MEMORY_FACTOR + 999'999) / 1'000'000)
+};
 /** Default for -maxmempool, maximum megabytes of mempool memory usage */
 static constexpr unsigned int DEFAULT_MAX_MEMPOOL_SIZE_MB{300};
-/** Default for -maxmempool when blocksonly is set */
-static constexpr unsigned int DEFAULT_BLOCKSONLY_MAX_MEMPOOL_SIZE_MB{5};
+static_assert(DEFAULT_MAX_MEMPOOL_SIZE_MB >= MIN_MAX_MEMPOOL_SIZE_MB);
+/** Default for -maxmempool when blocksonly is set.
+ * Raised from Core's 5 MB so -blocksonly still satisfies Flatten()'s cluster-size floor. */
+static constexpr unsigned int DEFAULT_BLOCKSONLY_MAX_MEMPOOL_SIZE_MB{MIN_MAX_MEMPOOL_SIZE_MB};
 /** Default for -mempoolexpiry, expiration time for mempool transactions in hours */
 static constexpr unsigned int DEFAULT_MEMPOOL_EXPIRY_HOURS{336};
 /** Whether to fall back to legacy V1 serialization when writing mempool.dat */

@@ -15,6 +15,7 @@ from test_framework.mempool_util import (
     create_large_orphan,
     DEFAULT_MIN_RELAY_TX_FEE,
     fill_mempool,
+    SMALL_MEMPOOL_ARGS,
 )
 from test_framework.messages import (
     CInv,
@@ -76,9 +77,7 @@ class PackageRelayTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
-        self.extra_args = [[
-            "-maxmempool=5",
-        ]]
+        self.extra_args = [SMALL_MEMPOOL_ARGS]
 
     def create_tx_below_mempoolminfee(self, wallet, utxo_to_spend=None):
         """Create a 1-input 0.1sat/vB transaction using a confirmed UTXO. Decrement and use

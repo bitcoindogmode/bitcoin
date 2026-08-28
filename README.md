@@ -8,11 +8,13 @@ For an immediately usable, binary version of the Bitcoin DOG Mode software, see 
 What is Bitcoin DOG Mode?
 ---------------------
 
-Bitcoin DOG Mode connects to the Bitcoin peer-to-peer network to download and fully
-validate blocks and transactions. It also includes a wallet and graphical user
-interface, which can be optionally built.
+Bitcoin DOG Mode is Bitcoin Core v31.1 with a small relay-policy overlay: larger
+standard transactions (3.9M WU), a 1-sat dust floor, and a `/DOGMode/` P2P
+user-agent. Consensus rules are unchanged.
 
-Further information about Bitcoin DOG Mode is available in the [doc folder](/doc).
+See [doc/policy/dogmode.md](doc/policy/dogmode.md) for the exact knobs,
+side effects (`-maxmempool` floor), and non-goals. Release notes:
+[doc/release-notes-dogmode.md](doc/release-notes-dogmode.md).
 
 License
 -------

@@ -7,6 +7,7 @@ from decimal import Decimal
 import random
 
 from test_framework.blocktools import (
+    MAX_STANDARD_TX_WEIGHT,
     WITNESS_COMMITMENT_HEADER,
     add_witness_commitment,
     create_block,
@@ -1261,7 +1262,7 @@ class SegWitTest(BitcoinTestFramework):
 
         # Add too-large for IsStandard witness and check that it does not enter reject filter
         p2sh_script = CScript([OP_TRUE])
-        witness_script2 = CScript([b'a' * 400000])
+        witness_script2 = CScript([b'a' * (MAX_STANDARD_TX_WEIGHT + 1000)])
         tx3.vout.append(CTxOut(tx2.vout[0].nValue - 1000, script_to_p2sh_script(p2sh_script)))
         tx3.wit.vtxinwit[0].scriptWitness.stack = [witness_script2]
 

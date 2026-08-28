@@ -1370,23 +1370,19 @@ BOOST_AUTO_TEST_CASE(check_max_selection_weight)
     {
         // Scenario 3:
 
-        // The actor starts with 1515x 0.033 BTC (49.995 BTC total) unspent outputs
-        // No results should be returned, because the transaction would be too large
-
-        // Perform selection
+        // The actor starts with two 25 BTC outputs whose signed input size is
+        // large enough that selecting both exceeds MAX_STANDARD_TX_WEIGHT.
+        // Target 49.5 BTC requires both coins, so selection must fail.
+        const int too_heavy_vbytes{MAX_STANDARD_TX_WEIGHT / (2 * WITNESS_SCALE_FACTOR) + 1'000};
         const auto result = select_coins(
             target, cs_params, cc, [&](CWallet& wallet) {
                 CoinsResult available_coins;
-                for (int j = 0; j < 1515; ++j) {
-                    add_coin(available_coins, wallet, CAmount(0.033 * COIN), CFeeRate(0), 144, false, 0, true);
-                }
+                add_coin(available_coins, wallet, CAmount(25 * COIN), CFeeRate(0), 144, false, 0, true, too_heavy_vbytes);
+                add_coin(available_coins, wallet, CAmount(25 * COIN), CFeeRate(0), 144, false, 0, true, too_heavy_vbytes);
                 return available_coins;
             },
             m_node);
 
-        // No results
-        // 1515 inputs * 68 bytes = 103,020 bytes
-        // 103,020 bytes * 4 = 412,080 weight, which is above the MAX_STANDARD_TX_WEIGHT of 400,000
         BOOST_CHECK(!result);
     }
 }

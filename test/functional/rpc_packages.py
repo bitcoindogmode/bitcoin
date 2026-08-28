@@ -10,6 +10,7 @@ import random
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.mempool_util import (
     fill_mempool,
+    SMALL_MEMPOOL_ARGS,
 )
 from test_framework.messages import (
     MAX_BIP125_RBF_SEQUENCE,
@@ -450,8 +451,7 @@ class RPCPackagesTest(BitcoinTestFramework):
         # Make chain of two transactions where parent doesn't make minfee threshold
         # but child is too high fee
         # Lower mempool limit to make it easier to fill_mempool
-        self.restart_node(0, extra_args=[
-            "-maxmempool=5",
+        self.restart_node(0, extra_args=SMALL_MEMPOOL_ARGS + [
             "-persistmempool=0",
         ])
         self.wallet.rescan_utxos()
