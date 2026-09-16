@@ -368,7 +368,13 @@ document.
 
 ---
 
-*The measured operating data in this runbook came from a node built from `bbc08805` on
-`31.1-dogmode` before pull request 3 merged; that node had plain Core 31.1 behaviour. Its
-provenance does not establish a DOG Mode policy run. Corrections welcome as pull requests
-against this file.*
+*The node this runbook was written from ran the recipe above on `bbc08805` (pre-merge, plain Core
+31.1 behaviour) through its initial sync. The merged tip
+(`75032400914250c7ad857dc29043761680a66485`) was built on that node's box on 2026-09-03 with the
+recipe in section 4: the unit suites and functional tests the policy change touched pass, and a copy
+of the node's own chainstate booted on those binaries answered with `DOG_MODE` in
+`localservicesnames` and needed no reindex. The node moved to it on 2026-09-05 and has advertised
+`DOG_MODE` since. Independent builds of the merged tip, with thanks: krsnak on Apple Silicon
+(`test_bitcoin`, 680 cases, no errors; #8) and J25dunn on Linux with the GUI (152 CTest entries
+passing and DOG peering over v1 and v2 on regtest; the full report is on #3). Corrections welcome as
+pull requests against this file.*
