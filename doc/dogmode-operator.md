@@ -1,9 +1,10 @@
 # Running a Bitcoin DOG Mode node: the operator's runbook
 
-*Written 2026-09-02 by the dogswap.io team from the node we run ourselves. Every number in
-here was measured on that node or read from the DOG Mode repository on the date given; nothing
-is a guess with a confident voice. When the client cuts a release, the "today" sections below
-get rewritten and the recipe stays.*
+*Written 2026-09-02 from the node we run ourselves, updated 2026-09-03 after the policy set
+merged, and maintained by the Dog of Bitcoin Foundation since 2026-09-14. Every number in here
+was measured on that node or read from the DOG Mode repository on the date given; nothing is a
+guess with a confident voice. When the client cuts a release, the "today" sections below get
+rewritten and the recipe stays.*
 
 DOG Mode (`github.com/bitcoindogmode/bitcoin`) is Bitcoin Core with a different relay policy.
 This document is for the person who wants to run one: what it is, what it is not, what you
@@ -367,7 +368,7 @@ document.
 
 ---
 
-*The measured operating data in this runbook came from a dogswap.io node built from
-`bbc08805` on `31.1-dogmode` before pull request 3 merged; that node had plain Core 31.1
-behaviour. Its provenance does not establish a DOG Mode policy run. Corrections welcome as
-pull requests against this file.*
+*The measured operating data in this runbook came from a node built from `bbc08805` on
+`31.1-dogmode` before pull request 3 merged; that node had plain Core 31.1 behaviour. Its
+provenance does not establish a DOG Mode policy run. Corrections welcome as pull requests
+against this file.*
