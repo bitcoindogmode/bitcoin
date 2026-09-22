@@ -2739,7 +2739,8 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, std
         // try opening an additional OUTBOUND_FULL_RELAY connection. If none of
         // these conditions are met, check to see if it's time to try an extra
         // block-relay-only peer (to confirm our tip is current, see below) or the next_feeler
-        // timer to decide if we should open a FEELER.
+        // timer to decide if we should open a FEELER. A pass none of these take goes to
+        // the $DOG Mode slots while they are not full.
 
         if (!m_anchors.empty() && (nOutboundBlockRelay < m_max_outbound_block_relay)) {
             conn_type = ConnectionType::BLOCK_RELAY;
@@ -2774,9 +2775,6 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, std
             // (similar to how we deal with extra outbound peers).
             next_extra_block_relay = now + rng.rand_exp_duration(EXTRA_BLOCK_RELAY_ONLY_PEER_INTERVAL);
             conn_type = ConnectionType::BLOCK_RELAY;
-        } else if (nOutboundDogMode < m_max_outbound_dog_mode) {
-            conn_type = ConnectionType::DOG_MODE;
-            dog_mode = true;
         } else if (now > next_feeler) {
             next_feeler = now + rng.rand_exp_duration(FEELER_INTERVAL);
             conn_type = ConnectionType::FEELER;
@@ -2792,6 +2790,14 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, std
             // so low that less than MAX_OUTBOUND_FULL_RELAY_CONNECTIONS are made,
             // to prevent interactions with otherwise protected outbound peers.
             next_extra_network_peer = now + rng.rand_exp_duration(EXTRA_NETWORK_PEER_INTERVAL);
+        } else if (nOutboundDogMode < m_max_outbound_dog_mode) {
+            // $DOG Mode connections take every pass the choices above leave
+            // free. They come after the feeler and network-specific choices,
+            // not before them: this choice has no timer of its own, and while
+            // few peers advertise NODE_DOG_MODE its slots can stay empty for
+            // hours, which would otherwise take every pass that reaches it.
+            conn_type = ConnectionType::DOG_MODE;
+            dog_mode = true;
         } else {
             // skip to next iteration of while loop
             continue;
