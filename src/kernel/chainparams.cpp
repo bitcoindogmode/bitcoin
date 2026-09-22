@@ -149,6 +149,7 @@ public:
         vSeeds.emplace_back("dnsseed.emzy.de."); // Stephan Oeste
         vSeeds.emplace_back("seed.bitcoin.wiz.biz."); // Jason Maurice
         vSeeds.emplace_back("seed.mainnet.achownodes.xyz."); // Ava Chow, only supports x1, x5, x9, x49, x809, x849, xd, x400, x404, x408, x448, xc08, xc48, x40c
+        vSeeds.emplace_back("dnsseed.dogofbitcoin.org."); // Dog of Bitcoin Foundation Inc, answers only nodes advertising NODE_DOG_MODE
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,0);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
