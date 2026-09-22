@@ -29,6 +29,7 @@ static const int CLIENT_VERSION =
                          +       1 * CLIENT_VERSION_BUILD;
 
 extern const std::string UA_NAME;
+extern const std::string UA_DOGMODE;
 
 
 std::string FormatFullVersion();
