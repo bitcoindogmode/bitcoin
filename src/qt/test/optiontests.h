@@ -11,21 +11,26 @@
 
 #include <QObject>
 
+class BitcoinApplication;
+
 class OptionTests : public QObject
 {
     Q_OBJECT
 public:
-    explicit OptionTests(interfaces::Node& node);
+    explicit OptionTests(BitcoinApplication& app);
 
 private Q_SLOTS:
     void init(); // called before each test function execution.
     void migrateSettings();
     void integerGetArgBug();
     void parametersInteraction();
+    void ordSettingsPersisted();
+    void ordCompatibleCommandLineSettings();
     void extractFilter();
 
 private:
     interfaces::Node& m_node;
+    BitcoinApplication& m_app;
     common::Settings m_previous_settings;
 };
 

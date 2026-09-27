@@ -20,6 +20,7 @@ class BitcoinGUI;
 class ClientModel;
 class NetworkStyle;
 class OptionsModel;
+class OrdManager;
 class PaymentServer;
 class PlatformStyle;
 class SplashScreen;
@@ -48,6 +49,7 @@ public:
     [[nodiscard]] bool createOptionsModel(bool resetSettings);
     /// Initialize prune setting
     void InitPruneSetting(int64_t prune_MiB);
+    bool InitOrdSetting(bool enabled);
     /// Create main window
     void createWindow(const NetworkStyle *networkStyle);
     /// Create splash screen
@@ -90,11 +92,17 @@ protected:
     bool event(QEvent* e) override;
 
 private:
+    void startOrd();
+    void maybeStartOrdIndex();
+
     std::optional<InitExecutor> m_executor;
     OptionsModel* optionsModel{nullptr};
     ClientModel* clientModel{nullptr};
     BitcoinGUI* window{nullptr};
     QTimer* pollShutdownTimer{nullptr};
+    QTimer* m_ord_sync_timer{nullptr};
+    std::unique_ptr<OrdManager> m_ord_manager;
+    bool m_ord_enabled{false};
 #ifdef ENABLE_WALLET
     PaymentServer* paymentServer{nullptr};
     WalletController* m_wallet_controller{nullptr};

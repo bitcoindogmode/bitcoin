@@ -26,11 +26,14 @@
 #include <qt/intro.h>
 #include <qt/networkstyle.h>
 #include <qt/optionsmodel.h>
+#include <qt/ordconfiguration.h>
+#include <qt/ordmanager.h>
 #include <qt/platformstyle.h>
 #include <qt/splashscreen.h>
 #include <qt/utilitydialog.h>
 #include <qt/winshutdownmonitor.h>
 #include <uint256.h>
+#include <univalue.h>
 #include <util/exception.h>
 #include <util/string.h>
 #include <util/threadnames.h>
@@ -50,14 +53,18 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QDesktopServices>
+#include <QFileDialog>
 #include <QLatin1String>
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QSettings>
 #include <QThread>
 #include <QTimer>
 #include <QTranslator>
+#include <QUrl>
 #include <QWindow>
 
 // Declare meta types used for QMetaObject::invokeMethod
@@ -319,6 +326,123 @@ void BitcoinApplication::InitPruneSetting(int64_t prune_MiB)
     optionsModel->SetPruneTargetGB(PruneMiBtoGB(prune_MiB));
 }
 
+bool BitcoinApplication::InitOrdSetting(bool enabled)
+{
+    if (!enabled) return true;
+
+    const auto bool_setting = [this](const char* name, bool default_value) {
+        const auto value{node().getPersistentSetting(name)};
+        const bool command_line{node().isSettingIgnored(name)};
+        return OrdBoolSetting{
+            command_line ? gArgs.GetBoolArg(std::string{"-"} + name, default_value) : SettingToBool(value, default_value),
+            command_line ? OrdSettingSource::COMMAND_LINE : value.isNull() ? OrdSettingSource::DEFAULT : OrdSettingSource::PERSISTENT,
+        };
+    };
+    const auto prune_value{node().getPersistentSetting("prune")};
+    const bool prune_command_line{node().isSettingIgnored("prune")};
+    const OrdNodeOptions current{
+        .prune = {
+            prune_command_line ? gArgs.GetIntArg("-prune", 0) != 0 : SettingTo<int64_t>(prune_value, 0) != 0,
+            prune_command_line ? OrdSettingSource::COMMAND_LINE : prune_value.isNull() ? OrdSettingSource::DEFAULT : OrdSettingSource::PERSISTENT,
+        },
+        .txindex = bool_setting("txindex", false),
+        .server = bool_setting("server", false),
+        .rest = bool_setting("rest", false),
+    };
+    const auto resolved{ResolveOrdConfiguration(true, current)};
+    if (!resolved.ok()) {
+        QMessageBox::critical(nullptr, tr("Ord configuration error"), resolved.error);
+        return false;
+    }
+
+    // These settings must take effect before base initialization. Persisting the
+    // standard node options also makes the opt-in survive subsequent launches.
+    for (const auto& name : {"txindex", "server", "rest"}) {
+        node().forceSetting(name, true);
+        node().updateRwSetting(name, true);
+    }
+    node().forceSetting("prune", 0);
+    node().updateRwSetting("prune", 0);
+    m_ord_enabled = true;
+    return true;
+}
+
+void BitcoinApplication::startOrd()
+{
+    if (!m_ord_enabled || m_ord_manager) return;
+
+    QString chain;
+    switch (gArgs.GetChainType()) {
+    case ChainType::MAIN: chain = QStringLiteral("mainnet"); break;
+    case ChainType::TESTNET: chain = QStringLiteral("testnet"); break;
+    case ChainType::TESTNET4: chain = QStringLiteral("testnet4"); break;
+    case ChainType::SIGNET: chain = QStringLiteral("signet"); break;
+    case ChainType::REGTEST: chain = QStringLiteral("regtest"); break;
+    }
+    m_ord_manager = std::make_unique<OrdManager>(
+        GUIUtil::PathToQString(gArgs.GetDataDirBase()),
+        GUIUtil::PathToQString(gArgs.GetDataDirNet()),
+        chain,
+        this);
+    connect(m_ord_manager.get(), &OrdManager::progress, window, [this](const QString& title, int percentage) {
+        window->showProgress(title, percentage);
+    });
+    connect(m_ord_manager.get(), &OrdManager::failed, window, [this](const QString& error) {
+        window->showProgress({}, 100);
+        window->message(tr("Ord error"), error, CClientUIInterface::MSG_ERROR);
+    });
+    connect(m_ord_manager.get(), &OrdManager::installationRequired, window, [this](const QString& version, const QString& url, const QString& sha256) {
+        QMessageBox prompt{window};
+        prompt.setWindowTitle(tr("Install Ord"));
+        prompt.setIcon(QMessageBox::Information);
+        prompt.setText(tr("DogMode requires the official Ord archive before it can build the Ord index."));
+        prompt.setInformativeText(tr("Download Ord %1 from its official release page, then select the downloaded archive. DogMode will verify this SHA-256 checksum before installing it:\n\n%2")
+                                      .arg(version, sha256));
+        auto* download{prompt.addButton(tr("Download Ord"), QMessageBox::ActionRole)};
+        auto* select{prompt.addButton(tr("Select Archive"), QMessageBox::AcceptRole)};
+        prompt.addButton(tr("Later"), QMessageBox::RejectRole);
+        prompt.exec();
+
+        if (prompt.clickedButton() == download) {
+            if (!QDesktopServices::openUrl(QUrl{url})) {
+                window->message(tr("Ord error"), tr("Could not open the Ord download page: %1").arg(url), CClientUIInterface::MSG_ERROR);
+                return;
+            }
+        } else if (prompt.clickedButton() != select) {
+            return;
+        }
+
+        const QString archive{QFileDialog::getOpenFileName(window, tr("Select Ord archive"), {}, tr("Ord archives (*.tar.gz *.zip);;All files (*)"))};
+        if (!archive.isEmpty()) m_ord_manager->installArchive(archive);
+    });
+    connect(m_ord_manager.get(), &OrdManager::ready, this, [this] {
+        window->message(tr("Ord installed"), tr("Ord is installed and will begin indexing after the Bitcoin blockchain and transaction index are synchronized."), CClientUIInterface::MSG_INFORMATION);
+        m_ord_sync_timer = new QTimer(this);
+        connect(m_ord_sync_timer, &QTimer::timeout, this, &BitcoinApplication::maybeStartOrdIndex);
+        m_ord_sync_timer->start(30000);
+        maybeStartOrdIndex();
+    });
+    connect(m_ord_manager.get(), &OrdManager::indexComplete, window, [this] {
+        window->message(tr("Ord synchronized"), tr("The Ord index is synchronized. Use %1 in a terminal for Ordinal operations.").arg(m_ord_manager->executablePath()), CClientUIInterface::MSG_INFORMATION);
+    });
+    m_ord_manager->start();
+}
+
+void BitcoinApplication::maybeStartOrdIndex()
+{
+    if (!m_ord_manager || !m_ord_manager->isReady() || node().isInitialBlockDownload()) return;
+    try {
+        const UniValue indexes{node().executeRpc("getindexinfo", UniValue{UniValue::VARR}, {})};
+        if (!indexes.exists("txindex") || !indexes["txindex"].exists("synced") || !indexes["txindex"]["synced"].get_bool()) return;
+    } catch (const std::exception& e) {
+        qWarning() << "Unable to query txindex status for Ord:" << e.what();
+        return;
+    }
+    if (m_ord_sync_timer) m_ord_sync_timer->stop();
+    window->message(tr("Ord indexing"), tr("Bitcoin synchronization is complete. Ord is now building its index in the background."), CClientUIInterface::MSG_INFORMATION);
+    m_ord_manager->startIndex();
+}
+
 void BitcoinApplication::requestInitialize()
 {
     qDebug() << __func__ << ": Requesting initialize";
@@ -328,6 +452,7 @@ void BitcoinApplication::requestInitialize()
 
 void BitcoinApplication::requestShutdown()
 {
+    if (m_ord_manager) m_ord_manager->stop();
     for (const auto w : QGuiApplication::topLevelWindows()) {
         w->hide();
     }
@@ -414,6 +539,7 @@ void BitcoinApplication::initializeResult(bool success, interfaces::BlockAndHead
         window->showMinimized();
     }
     Q_EMIT windowShown(window);
+    startOrd();
 
 #ifdef ENABLE_WALLET
     // Now that initialization/startup is done, process any command-line
@@ -576,8 +702,9 @@ int GuiMain(int argc, char* argv[])
     // User language is set up: pick a data directory
     bool did_show_intro = false;
     int64_t prune_MiB = 0;  // Intro dialog prune configuration
+    bool ord_enabled = false;
     // Gracefully exit if the user cancels
-    if (!Intro::showIfNeeded(did_show_intro, prune_MiB)) return EXIT_SUCCESS;
+    if (!Intro::showIfNeeded(did_show_intro, prune_MiB, ord_enabled)) return EXIT_SUCCESS;
 
     /// 6-7. Parse bitcoin.conf, determine network, switch to network specific
     /// options, and create datadir and settings.json.
@@ -652,6 +779,10 @@ int GuiMain(int argc, char* argv[])
     if (!app.createOptionsModel(gArgs.GetBoolArg("-resetguisettings", false))) {
         return EXIT_FAILURE;
     }
+
+    // Resolve Ord first so explicit command-line conflicts are still visible
+    // before the intro screen's prune choice is forced into memory.
+    if (!app.InitOrdSetting(ord_enabled)) return EXIT_FAILURE;
 
     if (did_show_intro) {
         // Store intro dialog settings other than datadir (network specific)

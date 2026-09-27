@@ -59,6 +59,7 @@ Intro::Intro(QWidget *parent, int64_t blockchain_size_gb, int64_t chain_state_si
     ui->pruneGB->setRange(min_prune_target_GB, std::numeric_limits<int>::max());
     if (const auto arg{gArgs.GetIntArg("-prune")}) {
         m_prune_checkbox_is_default = false;
+        m_prune_option_forced = true;
         ui->prune->setChecked(*arg >= 1);
         ui->prune->setEnabled(false);
     }
@@ -77,6 +78,16 @@ Intro::Intro(QWidget *parent, int64_t blockchain_size_gb, int64_t chain_state_si
         UpdatePruneLabels(ui->prune->isChecked());
         UpdateFreeSpaceLabel();
     });
+    connect(ui->enableOrd, &QCheckBox::toggled, [this](bool ord_enabled) {
+        if (ord_enabled) ui->prune->setChecked(false);
+        ui->prune->setEnabled(!ord_enabled && !m_prune_option_forced);
+        ui->pruneGB->setEnabled(!ord_enabled && ui->prune->isChecked());
+        ui->lblPruneSuffix->setEnabled(!ord_enabled);
+        ui->ordWarningLabel->setVisible(ord_enabled);
+        UpdatePruneLabels(ui->prune->isChecked());
+        UpdateFreeSpaceLabel();
+    });
+    ui->ordWarningLabel->setVisible(false);
 
     startThread();
 }
@@ -119,11 +130,22 @@ int64_t Intro::getPruneMiB() const
     }
 }
 
-bool Intro::showIfNeeded(bool& did_show_intro, int64_t& prune_MiB)
+bool Intro::getOrdEnabled() const
+{
+    return ui->enableOrd->isChecked();
+}
+
+void Intro::setOrdEnabled(bool enabled)
+{
+    ui->enableOrd->setChecked(enabled);
+}
+
+bool Intro::showIfNeeded(bool& did_show_intro, int64_t& prune_MiB, bool& ord_enabled)
 {
     did_show_intro = false;
 
     QSettings settings;
+    ord_enabled = settings.value("fOrdEnabled", false).toBool();
     /* If data directory provided on command line, no need to look at settings
        or show a picking dialog */
     if(!gArgs.GetArg("-datadir", "").empty())
@@ -145,6 +167,7 @@ bool Intro::showIfNeeded(bool& did_show_intro, int64_t& prune_MiB)
         /* If current default data directory does not exist, let the user choose one */
         Intro intro(nullptr, Params().AssumedBlockchainSize(), Params().AssumedChainStateSize());
         intro.setDataDirectory(dataDir);
+        intro.setOrdEnabled(ord_enabled);
         intro.setWindowIcon(QIcon(":icons/bitcoin"));
         did_show_intro = true;
 
@@ -171,9 +194,11 @@ bool Intro::showIfNeeded(bool& did_show_intro, int64_t& prune_MiB)
 
         // Additional preferences:
         prune_MiB = intro.getPruneMiB();
+        ord_enabled = intro.getOrdEnabled();
 
         settings.setValue("strDataDir", dataDir);
         settings.setValue("fReset", false);
+        settings.setValue("fOrdEnabled", ord_enabled);
     }
     /* Only override -datadir if different from the default, to make it possible to
      * override -datadir in the bitcoin.conf file in the default data directory

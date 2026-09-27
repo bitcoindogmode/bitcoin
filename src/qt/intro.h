@@ -37,6 +37,8 @@ public:
     QString getDataDirectory();
     void setDataDirectory(const QString &dataDir);
     int64_t getPruneMiB() const;
+    bool getOrdEnabled() const;
+    void setOrdEnabled(bool enabled);
 
     /**
      * Determine data directory. Let the user choose if the current one doesn't exist.
@@ -48,7 +50,7 @@ public:
      * @note do NOT call global gArgs.GetDataDirNet() before calling this function, this
      * will cause the wrong path to be cached.
      */
-    static bool showIfNeeded(bool& did_show_intro, int64_t& prune_MiB);
+    static bool showIfNeeded(bool& did_show_intro, int64_t& prune_MiB, bool& ord_enabled);
 
 Q_SIGNALS:
     void requestCheck();
@@ -65,6 +67,7 @@ private Q_SLOTS:
 private:
     Ui::Intro *ui;
     bool m_prune_checkbox_is_default{true};
+    bool m_prune_option_forced{false};
     QThread* thread{nullptr};
     QMutex mutex;
     bool signalled{false};

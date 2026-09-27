@@ -272,6 +272,26 @@
     </layout>
    </item>
    <item>
+    <widget class="QCheckBox" name="enableOrd">
+     <property name="text">
+      <string>Install and synchronize Ord (experimental)</string>
+     </property>
+     <property name="toolTip">
+      <string>Ord requires an unpruned node and a transaction index. It uses additional disk space.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="ordWarningLabel">
+     <property name="text">
+      <string>Ord support is optional. When enabled, pruning is unavailable and Ord begins indexing after the Bitcoin node and transaction index are synchronized.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
     <spacer name="verticalSpacer">
      <property name="orientation">
       <enum>Qt::Vertical</enum>

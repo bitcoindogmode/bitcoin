@@ -107,6 +107,14 @@ add_library(bitcoinqt STATIC EXCLUDE_FROM_ALL
   optionsdialog.h
   optionsmodel.cpp
   optionsmodel.h
+  ordconfiguration.cpp
+  ordconfiguration.h
+  ordinstaller.cpp
+  ordinstaller.h
+  ordmanager.cpp
+  ordmanager.h
+  ordprocess.cpp
+  ordprocess.h
   peertablemodel.cpp
   peertablemodel.h
   peertablesortproxy.cpp
@@ -146,6 +154,7 @@ set_property(SOURCE macnotificationhandler.mm
 target_link_libraries(bitcoinqt
   PUBLIC
     Qt6::Widgets
+    Qt6::Network
   PRIVATE
     core_interface
     bitcoin_cli
@@ -223,7 +232,6 @@ if(ENABLE_WALLET)
   target_link_libraries(bitcoinqt
     PRIVATE
       bitcoin_wallet
-      Qt6::Network
   )
 endif()
 

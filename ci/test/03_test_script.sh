@@ -170,6 +170,24 @@ if [ "$RUN_FUNCTIONAL_TESTS" = "true" ]; then
     --failfast
 fi
 
+if [ "${RUN_ORD_TESTS:-false}" = "true" ]; then
+  ORD_TEST_DIR="${BASE_SCRATCH_DIR}/ord-${ORD_VERSION}"
+  ORD_ARCHIVE="${ORD_TEST_DIR}/ord.tar.gz"
+  mkdir -p "${ORD_TEST_DIR}"
+  curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
+    --output "${ORD_ARCHIVE}" \
+    "https://github.com/ordinals/ord/releases/download/${ORD_VERSION}/ord-${ORD_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+  echo "${ORD_LINUX_X86_64_SHA256}  ${ORD_ARCHIVE}" | sha256sum --check
+  tar --extract --gzip --file "${ORD_ARCHIVE}" --directory "${ORD_TEST_DIR}"
+  ORD="${ORD_TEST_DIR}/ord-${ORD_VERSION}/ord" \
+  LD_LIBRARY_PATH="${DEPENDS_DIR}/${HOST}/lib" \
+    "${BASE_BUILD_DIR}/test/functional/test_runner.py" \
+      feature_ord_index.py \
+      --tmpdirprefix "${BASE_SCRATCH_DIR}/ord_test_runner/" \
+      --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" \
+      --quiet
+fi
+
 if [ "${RUN_TIDY}" = "true" ]; then
   cmake -B /tidy-build -DLLVM_DIR=/usr/lib/llvm-"${TIDY_LLVM_V}"/cmake -DCMAKE_BUILD_TYPE=Release -S "${BASE_ROOT_DIR}"/contrib/devtools/bitcoin-tidy
   cmake --build /tidy-build "$MAKEJOBS"
