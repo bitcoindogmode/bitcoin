@@ -15,7 +15,8 @@ OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QS
       m_bitcoin_network_dir{std::move(bitcoin_network_dir)},
       m_chain{std::move(chain)},
       m_artifact_override{std::move(artifact)},
-      m_index{this}
+      m_index{this},
+      m_inscription{this}
 {
     connect(&m_index, &OrdProcess::failed, this, [this](const QString& error) {
         if (m_stopping) return;
@@ -27,6 +28,18 @@ OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QS
             Q_EMIT indexComplete();
         } else {
             Q_EMIT failed(tr("Ord indexing exited with code %1.\n\n%2").arg(exit_code).arg(QString::fromUtf8(m_index.output())));
+        }
+    });
+    connect(&m_inscription, &OrdProcess::failed, this, [this](const QString& error) {
+        if (!m_stopping) Q_EMIT inscriptionFailed(tr("Ord inscription could not be started: %1").arg(error));
+    });
+    connect(&m_inscription, &OrdProcess::completed, this, [this](int exit_code) {
+        if (m_stopping) return;
+        const QString output{QString::fromUtf8(m_inscription.output()).trimmed()};
+        if (exit_code == 0) {
+            Q_EMIT inscriptionComplete(output);
+        } else {
+            Q_EMIT inscriptionFailed(tr("Ord inscription exited with code %1.\n\n%2").arg(exit_code).arg(output));
         }
     });
 }
@@ -110,8 +123,37 @@ void OrdManager::startIndex()
     });
 }
 
+void OrdManager::inscribe(const QString& file, const QString& fee_rate, const QString& destination, bool compress)
+{
+    if (!isReady()) {
+        Q_EMIT inscriptionFailed(tr("Ord is not installed yet."));
+        return;
+    }
+    if (m_inscription.isRunning()) {
+        Q_EMIT inscriptionFailed(tr("An Ord inscription is already in progress."));
+        return;
+    }
+
+    const QString data_dir{QDir{m_bitcoin_network_dir}.filePath(QStringLiteral("ord/data"))};
+    QStringList arguments{
+        QStringLiteral("--chain"), m_chain,
+        QStringLiteral("--bitcoin-data-dir"), m_bitcoin_data_dir,
+        QStringLiteral("--cookie-file"), QDir{m_bitcoin_network_dir}.filePath(QStringLiteral(".cookie")),
+        QStringLiteral("--data-dir"), data_dir,
+        QStringLiteral("wallet"), QStringLiteral("--name"), QStringLiteral("ord"),
+        QStringLiteral("inscribe"), QStringLiteral("--fee-rate"), fee_rate,
+        QStringLiteral("--file"), file,
+    };
+    if (!destination.isEmpty()) arguments << QStringLiteral("--destination") << destination;
+    if (compress) arguments << QStringLiteral("--compress");
+
+    Q_EMIT inscriptionStarted();
+    m_inscription.start(m_executable, arguments);
+}
+
 void OrdManager::stop()
 {
     m_stopping = true;
     m_index.stop();
+    m_inscription.stop();
 }

@@ -255,6 +255,22 @@ void OrdTests::managerRequestsAndInstallsArtifact()
     QCOMPARE(failed.size(), 0);
     QVERIFY(QFileInfo{manager.executablePath()}.isExecutable());
     QVERIFY(manager.executablePath().contains(QStringLiteral("ord/bin/0.29.0")));
+
+    const QString inscription_file{WriteFile(dir.filePath(QStringLiteral("inscription.png")), "image")};
+    QSignalSpy inscription_started{&manager, &OrdManager::inscriptionStarted};
+    QSignalSpy inscription_complete{&manager, &OrdManager::inscriptionComplete};
+    QSignalSpy inscription_failed{&manager, &OrdManager::inscriptionFailed};
+    manager.inscribe(inscription_file, QStringLiteral("7.5"), QStringLiteral("bcrt1qdestination"), true);
+    QCOMPARE(inscription_started.size(), 1);
+    QTRY_COMPARE(inscription_complete.size(), 1);
+    QCOMPARE(inscription_failed.size(), 0);
+    const QString command{inscription_complete.takeFirst().at(0).toString()};
+    QVERIFY(command.contains(QStringLiteral("--chain|regtest")));
+    QVERIFY(command.contains(QStringLiteral("wallet|--name|ord|inscribe")));
+    QVERIFY(command.contains(QStringLiteral("--fee-rate|7.5")));
+    QVERIFY(command.contains(QStringLiteral("--file|") + inscription_file));
+    QVERIFY(command.contains(QStringLiteral("--destination|bcrt1qdestination")));
+    QVERIFY(command.endsWith(QStringLiteral("--compress")));
 }
 
 void OrdTests::processReportsSuccessAndFailure()

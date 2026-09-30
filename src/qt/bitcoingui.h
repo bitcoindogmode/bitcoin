@@ -30,6 +30,7 @@
 class NetworkStyle;
 class Notificator;
 class OptionsModel;
+class OrdManager;
 class PlatformStyle;
 class RPCConsole;
 class SendCoinsRecipient;
@@ -78,6 +79,7 @@ public:
         The client model represents the part of the core that communicates with the P2P network, and is wallet-agnostic.
     */
     void setClientModel(ClientModel *clientModel = nullptr, interfaces::BlockAndHeaderTipInfo* tip_info = nullptr);
+    void setOrdManager(OrdManager* manager);
 #ifdef ENABLE_WALLET
     void setWalletController(WalletController* wallet_controller, bool show_loading_minimized);
     WalletController* getWalletController();
@@ -119,6 +121,7 @@ private:
     std::unique_ptr<interfaces::Handler> m_handler_question;
     ClientModel* clientModel = nullptr;
     WalletFrame* walletFrame = nullptr;
+    OrdManager* m_ord_manager{nullptr};
 
     UnitDisplayStatusBarControl* unitDisplayControl = nullptr;
     GUIUtil::ThemedLabel* labelWalletEncryptionIcon = nullptr;
@@ -144,6 +147,7 @@ private:
     QAction* m_load_psbt_clipboard_action = nullptr;
     QAction* aboutAction = nullptr;
     QAction* receiveCoinsAction = nullptr;
+    QAction* ordInscriptionAction{nullptr};
     QAction* optionsAction = nullptr;
     QAction* encryptWalletAction = nullptr;
     QAction* backupWalletAction = nullptr;
@@ -279,6 +283,8 @@ public Q_SLOTS:
     void gotoOverviewPage();
     /** Switch to history (transactions) page */
     void gotoHistoryPage();
+    /** Switch to Ord inscription page */
+    void gotoOrdInscriptionPage();
     /** Switch to receive coins page */
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */

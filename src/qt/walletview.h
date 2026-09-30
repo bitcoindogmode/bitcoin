@@ -12,6 +12,8 @@
 
 class ClientModel;
 class OverviewPage;
+class OrdInscriptionPage;
+class OrdManager;
 class PlatformStyle;
 class ReceiveCoinsDialog;
 class SendCoinsDialog;
@@ -43,6 +45,7 @@ public:
         The client model represents the part of the core that communicates with the P2P network, and is wallet-agnostic.
     */
     void setClientModel(ClientModel *clientModel);
+    void setOrdManager(OrdManager* manager);
     WalletModel* getWalletModel() const noexcept { return walletModel; }
 
     bool handlePaymentRequest(const SendCoinsRecipient& recipient);
@@ -62,6 +65,7 @@ private:
     QWidget *transactionsPage;
     ReceiveCoinsDialog *receiveCoinsPage;
     SendCoinsDialog *sendCoinsPage;
+    OrdInscriptionPage* ordInscriptionPage;
     AddressBookPage *usedSendingAddressesPage;
     AddressBookPage *usedReceivingAddressesPage;
 
@@ -79,6 +83,8 @@ public Q_SLOTS:
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */
     void gotoSendCoinsPage(QString addr = "");
+    /** Switch to the Ord inscription page */
+    void gotoOrdInscriptionPage();
 
     /** Show Sign/Verify Message dialog and switch to sign message tab */
     void gotoSignMessageTab(QString addr = "");

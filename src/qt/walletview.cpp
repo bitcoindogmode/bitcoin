@@ -9,6 +9,7 @@
 #include <qt/clientmodel.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
+#include <qt/ordinscriptionpage.h>
 #include <qt/overviewpage.h>
 #include <qt/platformstyle.h>
 #include <qt/receivecoinsdialog.h>
@@ -63,6 +64,8 @@ WalletView::WalletView(WalletModel* wallet_model, const PlatformStyle* _platform
     sendCoinsPage = new SendCoinsDialog(platformStyle);
     sendCoinsPage->setModel(walletModel);
 
+    ordInscriptionPage = new OrdInscriptionPage(this);
+
     usedSendingAddressesPage = new AddressBookPage(platformStyle, AddressBookPage::ForEditing, AddressBookPage::SendingTab, this);
     usedSendingAddressesPage->setModel(walletModel->getAddressTableModel());
 
@@ -73,6 +76,7 @@ WalletView::WalletView(WalletModel* wallet_model, const PlatformStyle* _platform
     addWidget(transactionsPage);
     addWidget(receiveCoinsPage);
     addWidget(sendCoinsPage);
+    addWidget(ordInscriptionPage);
 
     connect(overviewPage, &OverviewPage::transactionClicked, this, &WalletView::transactionClicked);
     // Clicking on a transaction on the overview pre-selects the transaction on the transaction history page
@@ -122,6 +126,11 @@ void WalletView::setClientModel(ClientModel *_clientModel)
     walletModel->setClientModel(_clientModel);
 }
 
+void WalletView::setOrdManager(OrdManager* manager)
+{
+    ordInscriptionPage->setOrdManager(manager);
+}
+
 void WalletView::processNewTransaction(const QModelIndex& parent, int start, int /*end*/)
 {
     // Prevent balloon-spam when initial block download is in progress
@@ -164,6 +173,11 @@ void WalletView::gotoSendCoinsPage(QString addr)
 
     if (!addr.isEmpty())
         sendCoinsPage->setAddress(addr);
+}
+
+void WalletView::gotoOrdInscriptionPage()
+{
+    setCurrentWidget(ordInscriptionPage);
 }
 
 void WalletView::gotoSignMessageTab(QString addr)

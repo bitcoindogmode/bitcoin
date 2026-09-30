@@ -2,7 +2,11 @@
 
 DogMode can install and initialize the [`ord`](https://github.com/ordinals/ord)
 indexer as an explicit option during first-run setup. This integration does not
-enable Ord by default and does not add inscription controls to the wallet.
+enable Ord by default. An experimental inscription page is available after Ord
+is installed.
+
+The follow-up experimental inscription interface is documented in
+[`ord-inscriptions.md`](ord-inscriptions.md).
 
 ## What the option changes
 

@@ -384,6 +384,7 @@ void BitcoinApplication::startOrd()
         GUIUtil::PathToQString(gArgs.GetDataDirNet()),
         chain,
         this);
+    window->setOrdManager(m_ord_manager.get());
     connect(m_ord_manager.get(), &OrdManager::progress, window, [this](const QString& title, int percentage) {
         window->showProgress(title, percentage);
     });

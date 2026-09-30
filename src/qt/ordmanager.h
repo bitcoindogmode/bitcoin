@@ -25,8 +25,10 @@ public:
     void start();
     void installArchive(const QString& archive);
     void startIndex();
+    void inscribe(const QString& file, const QString& fee_rate, const QString& destination, bool compress);
     void stop();
     bool isReady() const { return !m_executable.isEmpty(); }
+    bool isInscribing() const { return m_inscription.isRunning(); }
     QString executablePath() const { return m_executable; }
 
 Q_SIGNALS:
@@ -34,7 +36,10 @@ Q_SIGNALS:
     void installationRequired(const QString& version, const QString& url, const QString& sha256);
     void ready();
     void indexComplete();
+    void inscriptionStarted();
+    void inscriptionComplete(const QString& result);
     void failed(const QString& message);
+    void inscriptionFailed(const QString& message);
 
 private:
     bool verifyExecutable(const QString& path, QString& error) const;
@@ -47,6 +52,7 @@ private:
     std::optional<OrdArtifact> m_artifact_override;
     std::unique_ptr<QTemporaryDir> m_temporary_dir;
     OrdProcess m_index;
+    OrdProcess m_inscription;
     bool m_stopping{false};
 };
 

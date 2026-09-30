@@ -111,6 +111,8 @@ add_library(bitcoinqt STATIC EXCLUDE_FROM_ALL
   ordconfiguration.h
   ordinstaller.cpp
   ordinstaller.h
+  ordinscriptionpage.cpp
+  ordinscriptionpage.h
   ordmanager.cpp
   ordmanager.h
   ordprocess.cpp

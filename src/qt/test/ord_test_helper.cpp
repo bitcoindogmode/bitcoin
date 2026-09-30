@@ -20,6 +20,11 @@ int main(int argc, char* argv[])
         return 0;
     }
 
+    if (app.arguments().contains(QStringLiteral("inscribe"))) {
+        out << app.arguments().join('|') << '\n';
+        return 0;
+    }
+
     if (mode == "success") {
         out << "{\"height\":1}\n";
         return 0;
