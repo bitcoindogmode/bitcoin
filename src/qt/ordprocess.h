@@ -14,7 +14,8 @@ class OrdProcess : public QObject
 
 public:
     explicit OrdProcess(QObject* parent = nullptr);
-    void start(const QString& program, const QStringList& arguments);
+    ~OrdProcess() override;
+    void start(const QString& program, const QStringList& arguments, const QByteArray& input = {});
     void stop();
     bool isRunning() const;
     QByteArray output() const { return m_output; }
@@ -30,6 +31,7 @@ private:
     static constexpr qsizetype MAX_OUTPUT_BYTES{1024 * 1024};
     QProcess m_process;
     QByteArray m_output;
+    QByteArray m_input;
 };
 
 #endif // BITCOIN_QT_ORDPROCESS_H

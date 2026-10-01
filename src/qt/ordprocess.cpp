@@ -12,6 +12,11 @@ OrdProcess::OrdProcess(QObject* parent) : QObject{parent}
 {
     m_process.setProcessChannelMode(QProcess::MergedChannels);
     connect(&m_process, &QProcess::readyRead, this, &OrdProcess::readOutput);
+    connect(&m_process, &QProcess::started, this, [this] {
+        if (!m_input.isEmpty()) m_process.write(m_input);
+        m_process.closeWriteChannel();
+        m_input.clear();
+    });
     connect(&m_process, &QProcess::finished, this, [this](int exit_code, QProcess::ExitStatus status) {
         readOutput();
         if (status == QProcess::CrashExit) {
@@ -25,13 +30,24 @@ OrdProcess::OrdProcess(QObject* parent) : QObject{parent}
     });
 }
 
-void OrdProcess::start(const QString& program, const QStringList& arguments)
+OrdProcess::~OrdProcess()
+{
+    if (!isRunning()) return;
+    m_process.terminate();
+    if (!m_process.waitForFinished(3000)) {
+        m_process.kill();
+        m_process.waitForFinished();
+    }
+}
+
+void OrdProcess::start(const QString& program, const QStringList& arguments, const QByteArray& input)
 {
     if (isRunning()) {
         Q_EMIT failed(tr("Ord process is already running."));
         return;
     }
     m_output.clear();
+    m_input = input;
     m_process.start(program, arguments);
 }
 

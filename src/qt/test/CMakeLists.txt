@@ -29,7 +29,7 @@ target_link_libraries(test_bitcoin-qt
   Qt6::Test
 )
 
-target_link_libraries(ord_test_helper PRIVATE Qt6::Core)
+target_link_libraries(ord_test_helper PRIVATE Qt6::Core Qt6::Network)
 add_dependencies(test_bitcoin-qt ord_test_helper)
 
 import_plugins(test_bitcoin-qt)

@@ -256,21 +256,52 @@ void OrdTests::managerRequestsAndInstallsArtifact()
     QVERIFY(QFileInfo{manager.executablePath()}.isExecutable());
     QVERIFY(manager.executablePath().contains(QStringLiteral("ord/bin/0.29.0")));
 
+    qint64 cardinal_balance{-1};
+    qint64 total_balance{-1};
+    QString funding_address;
+    connect(&manager, &OrdManager::walletDetails, &manager, [&](qint64 cardinal, qint64 total, const QString& address) {
+        cardinal_balance = cardinal;
+        total_balance = total;
+        funding_address = address;
+    });
+    QSignalSpy wallet_unavailable{&manager, &OrdManager::walletUnavailable};
+    manager.refreshWallet();
+    QTRY_VERIFY_WITH_TIMEOUT(cardinal_balance >= 0 || wallet_unavailable.size() == 1, 5000);
+    QVERIFY2(wallet_unavailable.isEmpty(), qPrintable(wallet_unavailable.isEmpty() ? QString{} : wallet_unavailable.takeFirst().at(0).toString()));
+    QCOMPARE(cardinal_balance, 75000);
+    QCOMPARE(total_balance, 85000);
+    QCOMPARE(funding_address, QStringLiteral("bcrt1qfunding"));
+
+    QSignalSpy wallet_created{&manager, &OrdManager::walletCreated};
+    manager.createWallet();
+    QTRY_COMPARE(wallet_created.size(), 1);
+    QVERIFY(wallet_created.takeFirst().at(0).toString().startsWith(QStringLiteral("abandon abandon")));
+
+    QSignalSpy wallet_restored{&manager, &OrdManager::walletRestored};
+    manager.restoreWallet(QStringLiteral("test recovery words"), {});
+    QTRY_COMPARE(wallet_restored.size(), 1);
+
     const QString inscription_file{WriteFile(dir.filePath(QStringLiteral("inscription.png")), "image")};
     QSignalSpy inscription_started{&manager, &OrdManager::inscriptionStarted};
+    qint64 preview_fees{-1};
+    connect(&manager, &OrdManager::inscriptionPreview, &manager, [&](qint64 fees, const QString&) { preview_fees = fees; });
     QSignalSpy inscription_complete{&manager, &OrdManager::inscriptionComplete};
     QSignalSpy inscription_failed{&manager, &OrdManager::inscriptionFailed};
+    manager.previewInscription(inscription_file, QStringLiteral("7.5"), QStringLiteral("bcrt1qdestination"), true);
+    QTRY_COMPARE(preview_fees, 1234);
     manager.inscribe(inscription_file, QStringLiteral("7.5"), QStringLiteral("bcrt1qdestination"), true);
-    QCOMPARE(inscription_started.size(), 1);
+    QCOMPARE(inscription_started.size(), 2);
     QTRY_COMPARE(inscription_complete.size(), 1);
     QCOMPARE(inscription_failed.size(), 0);
     const QString command{inscription_complete.takeFirst().at(0).toString()};
-    QVERIFY(command.contains(QStringLiteral("--chain|regtest")));
-    QVERIFY(command.contains(QStringLiteral("wallet|--name|ord|inscribe")));
-    QVERIFY(command.contains(QStringLiteral("--fee-rate|7.5")));
-    QVERIFY(command.contains(QStringLiteral("--file|") + inscription_file));
-    QVERIFY(command.contains(QStringLiteral("--destination|bcrt1qdestination")));
-    QVERIFY(command.endsWith(QStringLiteral("--compress")));
+    QVERIFY(command.contains(QStringLiteral("\"--chain\",\"regtest\"")));
+    QVERIFY(command.contains(QStringLiteral("\"wallet\",\"--server-url\",\"http://127.0.0.1:")));
+    QVERIFY(command.contains(QStringLiteral("\",\"--name\",\"ord\",\"inscribe\"")));
+    QVERIFY(command.contains(QStringLiteral("\"--fee-rate\",\"7.5\"")));
+    QVERIFY(command.contains(QStringLiteral("\"--file\",\"") + inscription_file + QStringLiteral("\"")));
+    QVERIFY(command.contains(QStringLiteral("\"--destination\",\"bcrt1qdestination\"")));
+    QVERIFY(command.contains(QStringLiteral("\"--compress\"")));
+    QVERIFY(!command.contains(QStringLiteral("\"--dry-run\"")));
 }
 
 void OrdTests::processReportsSuccessAndFailure()
