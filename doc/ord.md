@@ -23,14 +23,16 @@ After Bitcoin Core and its transaction index are synchronized, DogMode:
 2. Verifies the selected archive against a checksum compiled into DogMode.
 3. Extracts it with the platform `tar` program, checks `ord --version`, and
    installs it atomically.
-4. Runs `ord index update` in the background with cookie authentication.
+4. Runs `ord --index-runes --index-sats index update` in the background with
+   cookie authentication. These indexes keep the dedicated Ord wallet from
+   treating rune-bearing or rare-sat outputs as ordinary cardinal funds.
 
 The Ord executable and index are stored below the network-specific Bitcoin data
 directory:
 
 ```
 ord/bin/0.29.0/ord
-ord/data/
+ord/data-runes-sats-v1/
 ```
 
 On Windows the executable is named `ord.exe`. Testnet, testnet4, signet, and
@@ -46,15 +48,26 @@ cookie paths. For example on mainnet:
 <bitcoin-data-dir>/ord/bin/0.29.0/ord \
   --bitcoin-data-dir <bitcoin-data-dir> \
   --cookie-file <bitcoin-data-dir>/.cookie \
-  --data-dir <bitcoin-data-dir>/ord/data \
+  --data-dir <bitcoin-data-dir>/ord/data-runes-sats-v1 \
+  --index-runes \
+  --index-sats \
   index info
 ```
 
 Ord is third-party experimental software and is distributed separately under
 its own license. DogMode itself does not make network requests to install Ord;
-the system browser performs the download. Its index requires significant
-additional disk space. Deleting the `ord/` directory removes the installed
-executable and index but does not change DogMode's saved full-node settings.
+the system browser performs the download. The rune and sat indexes require
+significant additional synchronization time and disk space, especially on
+mainnet. Deleting the `ord/` directory removes the installed executable and
+index but does not change DogMode's saved full-node settings.
+
+Ord 0.29.0 cannot add rune and sat tracking to an index that was originally
+created without those options. DogMode therefore uses the versioned
+`ord/data-runes-sats-v1` directory and leaves a legacy `ord/data` directory
+untouched. Upgrading from an earlier build requires a new synchronization and
+temporarily needs disk space for both indexes. After the new index is fully
+synchronized and the dedicated Ord wallet is verified, the unused legacy
+`ord/data` directory may be removed manually.
 
 ## Updating the pinned release
 

@@ -8,6 +8,7 @@
 #include <QJsonObject>
 #include <QHostAddress>
 #include <QTcpServer>
+#include <QTcpSocket>
 #include <QTextStream>
 #include <QThread>
 
@@ -35,6 +36,17 @@ int main(int argc, char* argv[])
         if (port_option < 0 || port_option + 1 >= app.arguments().size()) return 25;
         QTcpServer server;
         if (!server.listen(QHostAddress::LocalHost, app.arguments().at(port_option + 1).toUShort())) return 26;
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&server] {
+            while (QTcpSocket* socket = server.nextPendingConnection()) {
+                QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket] {
+                    socket->readAll();
+                    socket->write("HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\n1");
+                    socket->disconnectFromHost();
+                });
+            }
+        });
+        err << "Listening on http://127.0.0.1:" << server.serverPort() << '\n';
+        err.flush();
         return app.exec();
     }
 
@@ -43,7 +55,7 @@ int main(int argc, char* argv[])
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("receive"))) {
-        out << "{\"addresses\":[\"bcrt1qfunding\"]}\n";
+        out << "{\"addresses\":[\"bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9\"]}\n";
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("create"))) {

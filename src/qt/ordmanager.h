@@ -14,6 +14,8 @@
 #include <memory>
 #include <optional>
 
+class QTemporaryFile;
+
 class OrdManager : public QObject
 {
     Q_OBJECT
@@ -27,9 +29,12 @@ public:
     void startIndex();
     void refreshWallet();
     void createWallet();
-    void restoreWallet(const QString& mnemonic, const QString& passphrase);
-    void previewInscription(const QString& file, const QString& fee_rate, const QString& destination, bool compress);
-    void inscribe(const QString& file, const QString& fee_rate, const QString& destination, bool compress);
+    void restoreWallet(const QString& mnemonic);
+    quint64 previewInscription(const QString& file, const QString& fee_rate, const QString& destination, bool compress);
+    bool previewMatches(quint64 request_id, const QString& file, const QString& fee_rate, const QString& destination, bool compress, QString& error) const;
+    void invalidatePreview(quint64 request_id);
+    void inscribe(quint64 request_id);
+    void cancelInscription();
     void stop();
     bool isReady() const { return !m_executable.isEmpty(); }
     bool isInscribing() const { return m_inscription.isRunning(); }
@@ -44,11 +49,11 @@ Q_SIGNALS:
     void walletCreated(const QString& mnemonic);
     void walletRestored();
     void walletDetails(qint64 cardinal, qint64 total, const QString& address);
-    void inscriptionPreview(qint64 total_fees, const QString& result);
-    void inscriptionStarted();
-    void inscriptionComplete(const QString& result);
+    void inscriptionPreview(quint64 request_id, qint64 total_fees, const QString& input_key, const QString& result);
+    void inscriptionStarted(quint64 request_id);
+    void inscriptionComplete(quint64 request_id, const QString& result);
     void failed(const QString& message);
-    void inscriptionFailed(const QString& message);
+    void inscriptionFailed(quint64 request_id, const QString& message);
 
 private:
     enum class WalletOperation {
@@ -63,12 +68,22 @@ private:
         REFRESH_WALLET,
         PREVIEW_INSCRIPTION,
     };
+    enum class InscriptionOperation {
+        NONE,
+        PREVIEW,
+        REVALIDATE,
+        BROADCAST,
+    };
 
     bool verifyExecutable(const QString& path, QString& error) const;
     QStringList baseArguments() const;
     QStringList inscriptionArguments(const QString& file, const QString& fee_rate, const QString& destination, bool compress, bool dry_run) const;
-    void startWalletOperation(WalletOperation operation, const QStringList& arguments, const QByteArray& input = {});
+    void startWalletOperation(WalletOperation operation, const QStringList& arguments, SecureString input = {});
+    bool validateInscriptionSettings(const QString& fee_rate, const QString& destination, QString& error) const;
+    bool createInscriptionSnapshot(const QString& file, const QString& fee_rate, const QString& destination, bool compress, QString& error);
+    QString currentInputKey(const QString& file, const QString& fee_rate, const QString& destination, bool compress, QString& error) const;
     void runInscriptionPreview();
+    void runInscriptionBroadcast();
     void startServer();
     void waitForServer(int attempts_remaining = 100);
     void continueAfterIndex();
@@ -89,11 +104,19 @@ private:
     qint64 m_cardinal_balance{0};
     qint64 m_total_balance{0};
     QString m_funding_address;
-    bool m_inscription_preview{false};
+    InscriptionOperation m_inscription_operation{InscriptionOperation::NONE};
+    quint64 m_next_request_id{1};
+    quint64 m_inscription_request_id{0};
+    bool m_preview_authorized{false};
+    qint64 m_preview_total_fees{0};
+    QString m_preview_input_key;
+    std::unique_ptr<QTemporaryFile> m_preview_snapshot;
     QString m_preview_file;
+    QString m_preview_original_file;
     QString m_preview_fee_rate;
     QString m_preview_destination;
     bool m_preview_compress{false};
+    bool m_cancel_requested{false};
     quint16 m_server_port{0};
     QString m_server_url;
     bool m_stopping{false};

@@ -7,8 +7,10 @@
 import json
 import os
 from pathlib import Path
-import socket
+import re
 import subprocess
+import tempfile
+import time
 import urllib.parse
 import urllib.request
 from decimal import Decimal
@@ -22,6 +24,12 @@ class OrdIndexTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.extra_args = [["-txindex=1", "-server=1", "-rest=1"]]
         self.setup_clean_chain = True
+        for name in ("NO_PROXY", "no_proxy"):
+            entries = [entry for entry in os.environ.get(name, "").split(",") if entry]
+            for host in ("127.0.0.1", "localhost"):
+                if host not in entries:
+                    entries.append(host)
+            os.environ[name] = ",".join(entries)
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -29,7 +37,7 @@ class OrdIndexTest(BitcoinTestFramework):
         if not self.ord or not Path(self.ord).is_file():
             raise SkipTest("Set ORD to a pinned ord executable to run this extended test")
 
-    def ord_command(self, *arguments, input_text=None):
+    def ord_command(self, *arguments, input_text=None, data_dir=None, index_assets=True, check=True):
         node = self.nodes[0]
         rpc_port = urllib.parse.urlparse(node.url).port
         command = [
@@ -38,10 +46,12 @@ class OrdIndexTest(BitcoinTestFramework):
             "--bitcoin-data-dir", str(node.datadir_path),
             "--bitcoin-rpc-url", f"127.0.0.1:{rpc_port}",
             "--cookie-file", str(node.chain_path / ".cookie"),
-            "--data-dir", str(self.ord_data_dir),
-            *arguments,
+            "--data-dir", str(data_dir or self.ord_data_dir),
         ]
-        return subprocess.run(command, check=True, capture_output=True, text=True, input=input_text, timeout=120)
+        if index_assets:
+            command.extend(["--index-runes", "--index-sats"])
+        command.extend(arguments)
+        return subprocess.run(command, check=check, capture_output=True, text=True, input=input_text, timeout=120)
 
     def assert_ord_at_tip(self):
         output = self.ord_command("--format", "json", "index", "info")
@@ -54,9 +64,6 @@ class OrdIndexTest(BitcoinTestFramework):
         self.assert_ord_at_tip()
 
     def start_ord_server(self):
-        with socket.socket() as reservation:
-            reservation.bind(("127.0.0.1", 0))
-            port = reservation.getsockname()[1]
         node = self.nodes[0]
         rpc_port = urllib.parse.urlparse(node.url).port
         command = [
@@ -66,21 +73,44 @@ class OrdIndexTest(BitcoinTestFramework):
             "--bitcoin-rpc-url", f"127.0.0.1:{rpc_port}",
             "--cookie-file", str(node.chain_path / ".cookie"),
             "--data-dir", str(self.ord_data_dir),
-            "server", "--address", "127.0.0.1", "--http-port", str(port),
+            "--index-runes",
+            "--index-sats",
+            "server", "--address", "127.0.0.1", "--http-port", "0",
         ]
-        server = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        server_log = tempfile.TemporaryFile(mode="w+")
+        server = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=server_log, text=True)
 
-        def listening():
+        deadline = time.monotonic() + 10
+        port = None
+        log_position = 0
+        startup_output = ""
+        while time.monotonic() < deadline:
             if server.poll() is not None:
+                server_log.close()
                 raise AssertionError(f"Ord server exited with code {server.returncode}")
+            server_log.seek(log_position)
+            startup_output = (startup_output + server_log.read())[-4096:]
+            log_position = server_log.tell()
+            match = re.search(r"Listening on http://127\.0\.0\.1:([0-9]{1,5})", startup_output)
+            if match:
+                port = int(match.group(1))
+            if port:
+                break
+            time.sleep(0.1)
+        if not port or port > 65535:
+            server.terminate()
             try:
-                with socket.create_connection(("127.0.0.1", port), timeout=0.1):
-                    return True
-            except OSError:
-                return False
+                server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=10)
+            server_log.close()
+            raise AssertionError("Ord server did not report a valid kernel-assigned loopback port")
 
-        self.wait_until(listening, timeout=10)
-        return server, f"http://127.0.0.1:{port}"
+        server_url = f"http://127.0.0.1:{port}"
+        self.log.info(f"Ord server selected {server_url}")
+        self.wait_for_server_tip(server_url)
+        return server, server_log, server_url
 
     def wallet_command(self, server_url, *arguments, input_text=None):
         return self.ord_command("wallet", "--server-url", server_url, *arguments, input_text=input_text)
@@ -88,15 +118,24 @@ class OrdIndexTest(BitcoinTestFramework):
     def wait_for_server_tip(self, server_url):
         # Ord reports a block count including genesis, while bitcoind reports height.
         expected = self.nodes[0].getblockcount() + 1
+        last_response = None
+        last_error = None
 
         def synced():
+            nonlocal last_response, last_error
             try:
                 with urllib.request.urlopen(f"{server_url}/blockcount", timeout=1) as response:
-                    return json.loads(response.read()) == expected
-            except (OSError, ValueError):
+                    last_response = response.read()
+                    last_error = None
+                    return json.loads(last_response) == expected
+            except (OSError, ValueError) as error:
+                last_error = repr(error)
                 return False
 
-        self.wait_until(synced, timeout=30)
+        try:
+            self.wait_until(synced, timeout=30)
+        except AssertionError as error:
+            raise AssertionError(f"{error}; last response={last_response!r}; last error={last_error}") from error
 
     def run_test(self):
         node = self.nodes[0]
@@ -107,7 +146,19 @@ class OrdIndexTest(BitcoinTestFramework):
 
         self.log.info("Index the initial regtest chain")
         self.generate(node, 101)
+
+        self.log.info("Verify an existing inscription-only index cannot be retrofitted with rune and sat indexes")
+        legacy_data_dir = Path(self.options.tmpdir) / "legacy ord data"
+        legacy_data_dir.mkdir()
+        self.ord_command("index", "update", data_dir=legacy_data_dir, index_assets=False)
+        self.ord_command("index", "update", data_dir=legacy_data_dir)
+        legacy_find = self.ord_command("find", "0", data_dir=legacy_data_dir, check=False)
+        assert_equal(legacy_find.returncode, 1)
+        assert "requires index created with `--index-sats` flag" in legacy_find.stderr
+
         self.update_ord()
+        self.ord_command("find", "0")
+        self.ord_command("runes")
 
         self.log.info("Resume after a new block and node restart")
         self.generate(node, 1)
@@ -125,7 +176,7 @@ class OrdIndexTest(BitcoinTestFramework):
         self.update_ord()
 
         self.log.info("Create, restore, fund, preview, and use an Ord wallet through the local server")
-        server, server_url = self.start_ord_server()
+        server, server_log, server_url = self.start_ord_server()
         try:
             created = json.loads(self.wallet_command(server_url, "--name", "ord", "create").stdout)
             mnemonic = created["mnemonic"]
@@ -160,7 +211,12 @@ class OrdIndexTest(BitcoinTestFramework):
             assert inscription["total_fees"] > 0
         finally:
             server.terminate()
-            server.wait(timeout=10)
+            try:
+                server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=10)
+            server_log.close()
 
 
 if __name__ == "__main__":

@@ -36,11 +36,11 @@ private:
     void setFile(const QString& path);
     void createWallet();
     void restoreWallet();
-    void showRecoveryWords(const QString& mnemonic);
+    void showRecoveryWords(QString mnemonic);
     void previewInscription();
     void createInscription();
     void invalidatePreview();
-    QString inputKey() const;
+    bool validateInputs(QString& error) const;
     void setBusy(bool busy);
 
     OrdManager* m_manager{nullptr};
@@ -61,12 +61,15 @@ private:
     QPushButton* m_copy_address_button;
     QPushButton* m_preview_button;
     QPushButton* m_inscribe_button;
+    QPushButton* m_cancel_button;
     QTextEdit* m_result;
-    QString m_preview_key;
+    quint64 m_preview_request_id{0};
     qint64 m_preview_fees{0};
     qint64 m_cardinal_balance{0};
     bool m_wallet_available{false};
     bool m_preview_pending{false};
+    bool m_preview_authorized{false};
+    bool m_inscription_busy{false};
 };
 
 #endif // BITCOIN_QT_ORDINSCRIPTIONPAGE_H

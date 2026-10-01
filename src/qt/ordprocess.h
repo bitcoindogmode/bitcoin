@@ -8,6 +8,8 @@
 #include <QObject>
 #include <QProcess>
 
+#include <support/allocators/secure.h>
+
 class OrdProcess : public QObject
 {
     Q_OBJECT
@@ -15,23 +17,24 @@ class OrdProcess : public QObject
 public:
     explicit OrdProcess(QObject* parent = nullptr);
     ~OrdProcess() override;
-    void start(const QString& program, const QStringList& arguments, const QByteArray& input = {});
+    void start(const QString& program, const QStringList& arguments, SecureString input = {});
     void stop();
     bool isRunning() const;
     QByteArray output() const { return m_output; }
+    QByteArray takeOutput();
 
 Q_SIGNALS:
-    void outputChanged(const QByteArray& output);
     void completed(int exit_code);
     void failed(const QString& message);
 
 private:
     void readOutput();
+    void clearInput();
 
     static constexpr qsizetype MAX_OUTPUT_BYTES{1024 * 1024};
     QProcess m_process;
     QByteArray m_output;
-    QByteArray m_input;
+    SecureString m_input;
 };
 
 #endif // BITCOIN_QT_ORDPROCESS_H
