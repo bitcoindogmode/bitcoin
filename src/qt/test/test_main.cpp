@@ -9,6 +9,8 @@
 #include <qt/bitcoin.h>
 #include <qt/guiconstants.h>
 #include <qt/test/apptests.h>
+#include <qt/test/introtests.h>
+#include <qt/test/ordtests.h>
 #include <qt/test/optiontests.h>
 #include <qt/test/rpcnestedtests.h>
 #include <qt/test/uritests.h>
@@ -81,8 +83,14 @@ int main(int argc, char* argv[])
         AppTests app_tests(app);
         num_test_failures += QTest::qExec(&app_tests);
 
-        OptionTests options_tests(app.node());
+        OptionTests options_tests(app);
         num_test_failures += QTest::qExec(&options_tests);
+
+        IntroTests intro_tests;
+        num_test_failures += QTest::qExec(&intro_tests);
+
+        OrdTests ord_tests;
+        num_test_failures += QTest::qExec(&ord_tests);
 
         URITests test1;
         num_test_failures += QTest::qExec(&test1);

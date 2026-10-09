@@ -66,6 +66,14 @@ void WalletFrame::setClientModel(ClientModel *_clientModel)
     }
 }
 
+void WalletFrame::setOrdManager(OrdManager* manager)
+{
+    m_ord_manager = manager;
+    for (auto i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i) {
+        i.value()->setOrdManager(manager);
+    }
+}
+
 bool WalletFrame::addView(WalletView* walletView)
 {
     if (!clientModel) return false;
@@ -84,6 +92,7 @@ bool WalletFrame::addView(WalletView* walletView)
 
     walletStack->addWidget(walletView);
     mapWalletViews[walletView->getWalletModel()] = walletView;
+    walletView->setOrdManager(m_ord_manager);
 
     return true;
 }
@@ -160,6 +169,13 @@ void WalletFrame::gotoHistoryPage()
     QMap<WalletModel*, WalletView*>::const_iterator i;
     for (i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i)
         i.value()->gotoHistoryPage();
+}
+
+void WalletFrame::gotoOrdInscriptionPage()
+{
+    for (auto i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i) {
+        i.value()->gotoOrdInscriptionPage();
+    }
 }
 
 void WalletFrame::gotoReceiveCoinsPage()

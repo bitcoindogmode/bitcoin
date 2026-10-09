@@ -18,9 +18,49 @@
 
 #include <fstream>
 
-OptionTests::OptionTests(interfaces::Node& node) : m_node(node)
+OptionTests::OptionTests(BitcoinApplication& app) : m_node(app.node()), m_app(app)
 {
     gArgs.LockSettings([&](common::Settings& s) { m_previous_settings = s; });
+}
+
+void OptionTests::ordSettingsPersisted()
+{
+    gArgs.LockSettings([&](common::Settings& settings) {
+        for (const auto& name : {"prune", "txindex", "server", "rest"}) {
+            settings.forced_settings.erase(name);
+            settings.command_line_options.erase(name);
+            settings.rw_settings.erase(name);
+        }
+    });
+
+    QVERIFY(m_app.InitOrdSetting(true));
+    QCOMPARE(gArgs.GetIntArg("-prune", -1), 0);
+    QVERIFY(gArgs.GetBoolArg("-txindex", false));
+    QVERIFY(gArgs.GetBoolArg("-server", false));
+    QVERIFY(gArgs.GetBoolArg("-rest", false));
+
+    gArgs.LockSettings([&](const common::Settings& settings) {
+        QCOMPARE(settings.rw_settings.at("prune").getInt<int>(), 0);
+        QVERIFY(settings.rw_settings.at("txindex").get_bool());
+        QVERIFY(settings.rw_settings.at("server").get_bool());
+        QVERIFY(settings.rw_settings.at("rest").get_bool());
+    });
+}
+
+void OptionTests::ordCompatibleCommandLineSettings()
+{
+    gArgs.LockSettings([&](common::Settings& settings) {
+        settings.command_line_options["prune"] = {0};
+        settings.command_line_options["txindex"] = {true};
+        settings.command_line_options["server"] = {true};
+        settings.command_line_options["rest"] = {true};
+        settings.rw_settings["prune"] = 1000;
+        settings.rw_settings["txindex"] = false;
+        settings.rw_settings["server"] = false;
+        settings.rw_settings["rest"] = false;
+    });
+
+    QVERIFY(m_app.InitOrdSetting(true));
 }
 
 void OptionTests::init()

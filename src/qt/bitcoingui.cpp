@@ -17,6 +17,8 @@
 #include <qt/openuridialog.h>
 #include <qt/optionsdialog.h>
 #include <qt/optionsmodel.h>
+#include <qt/ordmanager.h>
+#include <qt/ordrecoverydialog.h>
 #include <qt/platformstyle.h>
 #include <qt/rpcconsole.h>
 #include <qt/utilitydialog.h>
@@ -283,6 +285,13 @@ void BitcoinGUI::createActions()
     historyAction->setShortcut(QKeySequence(QStringLiteral("Alt+4")));
     tabGroup->addAction(historyAction);
 
+    ordInscriptionAction = new QAction(platformStyle->SingleColorIcon(":/icons/tx_output"), tr("&Inscribe"), this);
+    ordInscriptionAction->setStatusTip(tr("Create an Ordinal inscription from a file"));
+    ordInscriptionAction->setToolTip(ordInscriptionAction->statusTip());
+    ordInscriptionAction->setCheckable(true);
+    ordInscriptionAction->setShortcut(QKeySequence(QStringLiteral("Alt+5")));
+    tabGroup->addAction(ordInscriptionAction);
+
 #ifdef ENABLE_WALLET
     // These showNormalIfMinimized are needed because Send Coins and Receive Coins
     // can be triggered from the tray menu, and need to show the GUI to be useful.
@@ -294,6 +303,8 @@ void BitcoinGUI::createActions()
     connect(receiveCoinsAction, &QAction::triggered, this, &BitcoinGUI::gotoReceiveCoinsPage);
     connect(historyAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
     connect(historyAction, &QAction::triggered, this, &BitcoinGUI::gotoHistoryPage);
+    connect(ordInscriptionAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
+    connect(ordInscriptionAction, &QAction::triggered, this, &BitcoinGUI::gotoOrdInscriptionPage);
 #endif // ENABLE_WALLET
 
     quitAction = new QAction(tr("E&xit"), this);
@@ -637,6 +648,7 @@ void BitcoinGUI::createToolBars()
         toolbar->addAction(sendCoinsAction);
         toolbar->addAction(receiveCoinsAction);
         toolbar->addAction(historyAction);
+        toolbar->addAction(ordInscriptionAction);
         overviewAction->setChecked(true);
 
 #ifdef ENABLE_WALLET
@@ -730,6 +742,25 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         unitDisplayControl->setOptionsModel(nullptr);
         // Disable top bar menu actions
         appMenuBar->clear();
+    }
+}
+
+void BitcoinGUI::setOrdManager(OrdManager* manager)
+{
+    if (m_ord_manager) disconnect(m_ord_manager, nullptr, this, nullptr);
+    m_ord_manager = manager;
+    if (walletFrame) walletFrame->setOrdManager(manager);
+    ordInscriptionAction->setEnabled(manager && manager->isReady() && m_wallet_selector && m_wallet_selector->count() > 0);
+    if (manager) {
+        connect(manager, &OrdManager::walletCreated, this, [this, manager](QString mnemonic) {
+            OrdRecoveryDialog dialog{mnemonic, this};
+            if (dialog.exec() == QDialog::Accepted) manager->acknowledgeWalletBackup();
+            mnemonic.fill(QChar{'\0'});
+            manager->refreshWallet();
+        });
+        connect(manager, &OrdManager::ready, this, [this] {
+            ordInscriptionAction->setEnabled(m_wallet_selector && m_wallet_selector->count() > 0);
+        });
     }
 }
 
@@ -856,6 +887,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
     sendCoinsAction->setEnabled(enabled);
     receiveCoinsAction->setEnabled(enabled);
     historyAction->setEnabled(enabled && !isPrivacyModeActivated());
+    ordInscriptionAction->setEnabled(enabled && m_ord_manager && m_ord_manager->isReady());
     encryptWalletAction->setEnabled(enabled);
     backupWalletAction->setEnabled(enabled);
     changePassphraseAction->setEnabled(enabled);
@@ -1015,6 +1047,12 @@ void BitcoinGUI::gotoHistoryPage()
 {
     historyAction->setChecked(true);
     if (walletFrame) walletFrame->gotoHistoryPage();
+}
+
+void BitcoinGUI::gotoOrdInscriptionPage()
+{
+    ordInscriptionAction->setChecked(true);
+    if (walletFrame) walletFrame->gotoOrdInscriptionPage();
 }
 
 void BitcoinGUI::gotoReceiveCoinsPage()

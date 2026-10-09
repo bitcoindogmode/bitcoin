@@ -9,6 +9,7 @@
 #include <QMap>
 
 class ClientModel;
+class OrdManager;
 class PlatformStyle;
 class SendCoinsRecipient;
 class WalletModel;
@@ -34,6 +35,7 @@ public:
     ~WalletFrame();
 
     void setClientModel(ClientModel *clientModel);
+    void setOrdManager(OrdManager* manager);
 
     bool addView(WalletView* walletView);
     void setCurrentWallet(WalletModel* wallet_model);
@@ -55,6 +57,7 @@ private:
     QStackedWidget *walletStack;
     ClientModel *clientModel;
     QMap<WalletModel*, WalletView*> mapWalletViews;
+    OrdManager* m_ord_manager{nullptr};
 
     bool bOutOfSync;
 
@@ -71,6 +74,8 @@ public Q_SLOTS:
     void gotoOverviewPage();
     /** Switch to history (transactions) page */
     void gotoHistoryPage();
+    /** Switch to the Ord inscription page */
+    void gotoOrdInscriptionPage();
     /** Switch to receive coins page */
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */
