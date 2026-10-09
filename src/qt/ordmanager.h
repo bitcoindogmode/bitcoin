@@ -7,6 +7,7 @@
 
 #include <qt/ordinstaller.h>
 #include <qt/ordprocess.h>
+#include <qt/ordrpcgate.h>
 
 #include <QObject>
 #include <QTemporaryDir>
@@ -21,7 +22,7 @@ class OrdManager : public QObject
     Q_OBJECT
 
 public:
-    explicit OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QString chain, QObject* parent = nullptr, std::optional<OrdArtifact> artifact = std::nullopt);
+    explicit OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QString chain, QObject* parent = nullptr, std::optional<OrdArtifact> artifact = std::nullopt, OrdRpcExecutor execute_rpc = {}, quint16 rpc_port = 0);
     ~OrdManager() override;
 
     void start();
@@ -29,6 +30,8 @@ public:
     void startIndex();
     void refreshWallet();
     void createWallet();
+    bool acknowledgeWalletBackup();
+    bool backupRequired() const;
     void restoreWallet(const QString& mnemonic);
     quint64 previewInscription(const QString& file, const QString& fee_rate, const QString& destination, bool compress);
     bool previewMatches(quint64 request_id, const QString& file, const QString& fee_rate, const QString& destination, bool compress, QString& error) const;
@@ -37,7 +40,8 @@ public:
     void cancelInscription();
     void stop();
     bool isReady() const { return !m_executable.isEmpty(); }
-    bool isInscribing() const { return m_inscription.isRunning(); }
+    bool isInscribing() const { return m_inscription_operation != InscriptionOperation::NONE || m_broadcast_pending || m_inscription.isRunning(); }
+    static bool ReadPreviewFile(const QString& path, QByteArray& bytes, QString& error);
     QString executablePath() const { return m_executable; }
 
 Q_SIGNALS:
@@ -70,6 +74,8 @@ private:
     };
     enum class InscriptionOperation {
         NONE,
+        CARDINALS,
+        RARE_SATS,
         PREVIEW,
         REVALIDATE,
         BROADCAST,
@@ -87,6 +93,8 @@ private:
     void startServer();
     void waitForServer(int attempts_remaining = 100);
     void continueAfterIndex();
+    QString backupMarker() const;
+    void failPendingInscription(const QString& message);
 
     QString m_bitcoin_data_dir;
     QString m_bitcoin_network_dir;
@@ -117,9 +125,17 @@ private:
     QString m_preview_destination;
     bool m_preview_compress{false};
     bool m_cancel_requested{false};
+    bool m_broadcast_pending{false};
     quint16 m_server_port{0};
     QString m_server_url;
     bool m_stopping{false};
+    bool m_backup_pending{false};
+    bool m_creating_wallet{false};
+    OrdRpcExecutor m_execute_rpc;
+    quint16 m_rpc_port;
+    std::unique_ptr<QTemporaryFile> m_config;
+    std::unique_ptr<OrdRpcGate> m_rpc_gate;
+    QSet<QString> m_safe_inputs;
 };
 
 #endif // BITCOIN_QT_ORDMANAGER_H

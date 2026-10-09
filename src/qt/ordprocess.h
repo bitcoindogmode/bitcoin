@@ -7,6 +7,7 @@
 
 #include <QObject>
 #include <QProcess>
+#include <QProcessEnvironment>
 
 #include <support/allocators/secure.h>
 
@@ -22,6 +23,7 @@ public:
     bool isRunning() const;
     QByteArray output() const { return m_output; }
     QByteArray takeOutput();
+    static QProcessEnvironment SafeEnvironment();
 
 Q_SIGNALS:
     void completed(int exit_code);
@@ -35,6 +37,7 @@ private:
     QProcess m_process;
     QByteArray m_output;
     SecureString m_input;
+    quint64 m_invocation{0};
 };
 
 #endif // BITCOIN_QT_ORDPROCESS_H

@@ -117,6 +117,10 @@ add_library(bitcoinqt STATIC EXCLUDE_FROM_ALL
   ordmanager.h
   ordprocess.cpp
   ordprocess.h
+  ordrecoverydialog.cpp
+  ordrecoverydialog.h
+  ordrpcgate.cpp
+  ordrpcgate.h
   peertablemodel.cpp
   peertablemodel.h
   peertablesortproxy.cpp

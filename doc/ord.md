@@ -24,8 +24,9 @@ After Bitcoin Core and its transaction index are synchronized, DogMode:
 3. Extracts it with the platform `tar` program, checks `ord --version`, and
    installs it atomically.
 4. Runs `ord --index-runes --index-sats index update` in the background with
-   cookie authentication. These indexes keep the dedicated Ord wallet from
-   treating rune-bearing or rare-sat outputs as ordinary cardinal funds.
+   cookie authentication. These indexes supply asset information. The inscription
+   UI separately excludes non-common-sat outputs and enforces a frozen funding
+   input allowlist at its wallet-scoped RPC gate; indexing alone is not protection.
 
 The Ord executable and index are stored below the network-specific Bitcoin data
 directory:
@@ -49,12 +50,16 @@ cookie paths. For example on mainnet:
   --bitcoin-data-dir <bitcoin-data-dir> \
   --cookie-file <bitcoin-data-dir>/.cookie \
   --data-dir <bitcoin-data-dir>/ord/data-runes-sats-v1 \
+  --index <bitcoin-data-dir>/ord/data-runes-sats-v1/index.redb \
   --index-runes \
   --index-sats \
   index info
 ```
 
-Ord is third-party experimental software and is distributed separately under
+Direct terminal spending bypasses the GUI's funding-input gate:
+sat indexing alone does not stop Ord from selecting non-common sats. Inspect and
+protect valuable outputs before any terminal operation. Ord is third-party
+experimental software, distributed separately under
 its own license. DogMode itself does not make network requests to install Ord;
 the system browser performs the download. The rune and sat indexes require
 significant additional synchronization time and disk space, especially on

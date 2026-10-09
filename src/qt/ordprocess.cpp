@@ -24,10 +24,7 @@ void AddLoopbackNoProxy(QProcessEnvironment& environment, const QString& name)
 
 OrdProcess::OrdProcess(QObject* parent) : QObject{parent}
 {
-    QProcessEnvironment environment{QProcessEnvironment::systemEnvironment()};
-    AddLoopbackNoProxy(environment, QStringLiteral("NO_PROXY"));
-    AddLoopbackNoProxy(environment, QStringLiteral("no_proxy"));
-    m_process.setProcessEnvironment(environment);
+    m_process.setProcessEnvironment(SafeEnvironment());
     m_process.setProcessChannelMode(QProcess::MergedChannels);
     connect(&m_process, &QProcess::readyRead, this, &OrdProcess::readOutput);
     connect(&m_process, &QProcess::started, this, [this] {
@@ -72,6 +69,8 @@ void OrdProcess::start(const QString& program, const QStringList& arguments, Sec
     if (!m_output.isEmpty()) m_output.fill('\0');
     m_output.clear();
     m_input = std::move(input);
+    ++m_invocation;
+    m_process.setProcessEnvironment(SafeEnvironment());
     m_process.start(program, arguments);
 }
 
@@ -83,10 +82,22 @@ QByteArray OrdProcess::takeOutput()
 void OrdProcess::stop()
 {
     if (!isRunning()) return;
+    const quint64 invocation{m_invocation};
     m_process.terminate();
-    QTimer::singleShot(3000, &m_process, [this] {
-        if (isRunning()) m_process.kill();
+    QTimer::singleShot(3000, &m_process, [this, invocation] {
+        if (invocation == m_invocation && isRunning()) m_process.kill();
     });
+}
+
+QProcessEnvironment OrdProcess::SafeEnvironment()
+{
+    QProcessEnvironment environment{QProcessEnvironment::systemEnvironment()};
+    for (const QString& name : environment.keys()) {
+        if (name.startsWith(QStringLiteral("ORD_"), Qt::CaseInsensitive)) environment.remove(name);
+    }
+    AddLoopbackNoProxy(environment, QStringLiteral("NO_PROXY"));
+    AddLoopbackNoProxy(environment, QStringLiteral("no_proxy"));
+    return environment;
 }
 
 bool OrdProcess::isRunning() const

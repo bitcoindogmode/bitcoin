@@ -37,21 +37,24 @@ class OrdIndexTest(BitcoinTestFramework):
         if not self.ord or not Path(self.ord).is_file():
             raise SkipTest("Set ORD to a pinned ord executable to run this extended test")
 
-    def ord_command(self, *arguments, input_text=None, data_dir=None, index_assets=True, check=True):
+    def ord_command(self, *arguments, input_text=None, data_dir=None, index_assets=True, check=True, rpc_endpoint=None):
         node = self.nodes[0]
         rpc_port = urllib.parse.urlparse(node.url).port
         command = [
             self.ord,
             "--chain", "regtest",
             "--bitcoin-data-dir", str(node.datadir_path),
-            "--bitcoin-rpc-url", f"127.0.0.1:{rpc_port}",
-            "--cookie-file", str(node.chain_path / ".cookie"),
+            "--bitcoin-rpc-url", rpc_endpoint["url"] if rpc_endpoint else f"127.0.0.1:{rpc_port}",
+            "--cookie-file", rpc_endpoint["cookie"] if rpc_endpoint else str(node.chain_path / ".cookie"),
+            "--config", str(self.ord_config),
+            "--index", str((data_dir or self.ord_data_dir) / "index.redb"),
             "--data-dir", str(data_dir or self.ord_data_dir),
         ]
         if index_assets:
             command.extend(["--index-runes", "--index-sats"])
         command.extend(arguments)
-        return subprocess.run(command, check=check, capture_output=True, text=True, input=input_text, timeout=120)
+        environment = {key: value for key, value in os.environ.items() if not key.upper().startswith("ORD_")}
+        return subprocess.run(command, check=check, capture_output=True, text=True, input=input_text, timeout=120, env=environment)
 
     def assert_ord_at_tip(self):
         output = self.ord_command("--format", "json", "index", "info")
@@ -72,13 +75,16 @@ class OrdIndexTest(BitcoinTestFramework):
             "--bitcoin-data-dir", str(node.datadir_path),
             "--bitcoin-rpc-url", f"127.0.0.1:{rpc_port}",
             "--cookie-file", str(node.chain_path / ".cookie"),
+            "--config", str(self.ord_config),
+            "--index", str(self.ord_data_dir / "index.redb"),
             "--data-dir", str(self.ord_data_dir),
             "--index-runes",
             "--index-sats",
             "server", "--address", "127.0.0.1", "--http-port", "0",
         ]
         server_log = tempfile.TemporaryFile(mode="w+")
-        server = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=server_log, text=True)
+        environment = {key: value for key, value in os.environ.items() if not key.upper().startswith("ORD_")}
+        server = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=server_log, text=True, env=environment)
 
         deadline = time.monotonic() + 10
         port = None
@@ -110,10 +116,45 @@ class OrdIndexTest(BitcoinTestFramework):
         server_url = f"http://127.0.0.1:{port}"
         self.log.info(f"Ord server selected {server_url}")
         self.wait_for_server_tip(server_url)
+        request = urllib.request.Request(f"{server_url}/status", headers={"Accept": "application/json"})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            status = json.load(response)
+        assert_equal(status["chain"], "regtest")
+        for flag in ("inscription_index", "rune_index", "sat_index", "json_api"):
+            assert_equal(status[flag], True)
+        assert_equal(status["unrecoverably_reorged"], False)
         return server, server_log, server_url
 
-    def wallet_command(self, server_url, *arguments, input_text=None):
-        return self.ord_command("wallet", "--server-url", server_url, *arguments, input_text=input_text)
+    def wallet_command(self, server_url, *arguments, input_text=None, rpc_endpoint=None):
+        return self.ord_command("wallet", "--server-url", server_url, *arguments, input_text=input_text, rpc_endpoint=rpc_endpoint)
+
+    def start_rpc_gate(self, allowed):
+        bridge = Path(self.config["environment"]["BUILDDIR"]) / "bin" / ("ord_rpc_test_bridge.exe" if os.name == "nt" else "ord_rpc_test_bridge")
+        if not bridge.is_file():
+            raise AssertionError("Build ord_rpc_test_bridge to exercise the production funding gate")
+        node = self.nodes[0]
+        port = urllib.parse.urlparse(node.url).port
+        log = tempfile.TemporaryFile(mode="w+")
+        process = subprocess.Popen([str(bridge), f"http://127.0.0.1:{port}", str(node.chain_path / ".cookie"), *sorted(allowed)], stdout=log, stderr=subprocess.DEVNULL)
+        endpoint = None
+        try:
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise AssertionError(f"RPC bridge exited with code {process.returncode}")
+                log.seek(0)
+                text = log.read()
+                if text.endswith("\n"):
+                    endpoint = json.loads(text)
+                    break
+                time.sleep(0.05)
+            assert endpoint is not None
+            return process, log, endpoint
+        except BaseException:
+            process.terminate()
+            process.wait(timeout=10)
+            log.close()
+            raise
 
     def wait_for_server_tip(self, server_url):
         # Ord reports a block count including genesis, while bitcoind reports height.
@@ -141,6 +182,30 @@ class OrdIndexTest(BitcoinTestFramework):
         node = self.nodes[0]
         self.ord_data_dir = Path(self.options.tmpdir) / "ord data with spaces"
         self.ord_data_dir.mkdir()
+        self.ord_config = Path(self.options.tmpdir) / "managed-ord.yaml"
+        self.ord_config.write_text("{}\n", encoding="utf-8")
+
+        self.log.info("Verify managed settings ignore inherited Ord environment and config")
+        hostile_config = Path(self.options.tmpdir) / "unmanaged-ord.yaml"
+        hostile_config.write_text("no_index_inscriptions: true\n", encoding="utf-8")
+        (self.ord_data_dir / "ord.yaml").write_text("no_index_inscriptions: true\n", encoding="utf-8")
+        hostile = {"ORD_NO_INDEX_INSCRIPTIONS": "1", "ORD_INDEX": str(hostile_config), "ORD_CONFIG": str(hostile_config), "ORD_BITCOIN_RPC_URL": "127.0.0.1:1"}
+        saved = {key: os.environ.get(key) for key in hostile}
+        try:
+            os.environ.update(hostile)
+            settings = json.loads(self.ord_command("settings").stdout)
+            assert_equal(settings["no_index_inscriptions"], False)
+            assert_equal(settings["index_runes"], True)
+            assert_equal(settings["index_sats"], True)
+            assert_equal(settings["index"], str(self.ord_data_dir / "index.redb"))
+            # Ord omits the consumed config path from its effective settings.
+            assert_equal(settings["bitcoin_rpc_url"], f"127.0.0.1:{urllib.parse.urlparse(node.url).port}")
+        finally:
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
         self.wait_until(lambda: node.getindexinfo("txindex")["txindex"]["synced"])
 
@@ -190,7 +255,16 @@ class OrdIndexTest(BitcoinTestFramework):
             receive = json.loads(self.wallet_command(server_url, "--name", "ord", "receive").stdout)
             funding_address = receive["addresses"][0]
             funding_wallet = node.get_wallet_rpc(self.default_wallet_name)
-            funding_wallet.sendtoaddress(funding_address, Decimal("0.001"))
+            # Preserve the block's uncommon sat in the first output, and fund
+            # Ord from common sats beginning at offset 10,000.
+            coin = funding_wallet.listunspent()[0]
+            raw = funding_wallet.createrawtransaction(
+                [{"txid": coin["txid"], "vout": coin["vout"]}],
+                [{funding_wallet.getnewaddress(): Decimal("0.0001")},
+                 {funding_address: Decimal("0.001")},
+                 {funding_wallet.getnewaddress(): coin["amount"] - Decimal("0.00111")}],
+            )
+            node.sendrawtransaction(funding_wallet.signrawtransactionwithwallet(raw)["hex"])
             self.generate(node, 1)
             self.wait_for_server_tip(server_url)
             balance = json.loads(self.wallet_command(server_url, "--name", "ord", "balance").stdout)
@@ -198,17 +272,41 @@ class OrdIndexTest(BitcoinTestFramework):
 
             inscription_file = Path(self.options.tmpdir) / "dogmode inscription.txt"
             inscription_file.write_text("DogMode Ord integration test\n", encoding="utf-8")
-            preview = json.loads(self.wallet_command(
-                server_url, "--name", "ord", "inscribe", "--fee-rate", "1", "--file", str(inscription_file), "--compress", "--dry-run",
-            ).stdout)
-            assert preview["total_fees"] > 0
-            assert_equal(preview["reveal_broadcast"], False)
-
-            inscription = json.loads(self.wallet_command(
-                server_url, "--name", "ord", "inscribe", "--fee-rate", "1", "--file", str(inscription_file), "--compress",
-            ).stdout)
-            assert_equal(inscription["reveal_broadcast"], True)
-            assert inscription["total_fees"] > 0
+            cardinals = json.loads(self.wallet_command(server_url, "--name", "ord", "cardinals").stdout)
+            rare = json.loads(self.wallet_command(server_url, "--name", "ord", "sats").stdout)
+            allowed = {coin["output"] for coin in cardinals} - {sat["output"] for sat in rare}
+            assert allowed
+            bridge, bridge_log, rpc_endpoint = self.start_rpc_gate(allowed)
+            try:
+                self.log.info("Receive a mature uncommon-sat UTXO after freezing the funding inputs")
+                self.generatetoaddress(node, 1, funding_address)
+                self.generate(node, 100)
+                self.wait_for_server_tip(server_url)
+                rare = json.loads(self.wallet_command(server_url, "--name", "ord", "sats").stdout)
+                assert rare
+                rare_outputs = {sat["output"] for sat in rare}
+                preview = json.loads(self.wallet_command(
+                    server_url, "--name", "ord", "inscribe", "--fee-rate", "1", "--file", str(inscription_file), "--compress", "--dry-run",
+                    rpc_endpoint=rpc_endpoint,
+                ).stdout)
+                assert preview["total_fees"] > 0
+                assert_equal(preview["reveal_broadcast"], False)
+                inscription = json.loads(self.wallet_command(
+                    server_url, "--name", "ord", "inscribe", "--fee-rate", "1", "--file", str(inscription_file), "--compress",
+                    rpc_endpoint=rpc_endpoint,
+                ).stdout)
+                assert_equal(inscription["reveal_broadcast"], True)
+                commit = node.getrawtransaction(inscription["commit"], True)
+                spent = {f"{txin['txid']}:{txin['vout']}" for txin in commit["vin"]}
+                assert spent <= allowed
+                assert not spent & rare_outputs
+                for output in rare_outputs:
+                    txid, vout = output.split(":")
+                    assert node.gettxout(txid, int(vout)) is not None
+            finally:
+                bridge.terminate()
+                bridge.wait(timeout=10)
+                bridge_log.close()
         finally:
             server.terminate()
             try:

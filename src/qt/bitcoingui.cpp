@@ -18,6 +18,7 @@
 #include <qt/optionsdialog.h>
 #include <qt/optionsmodel.h>
 #include <qt/ordmanager.h>
+#include <qt/ordrecoverydialog.h>
 #include <qt/platformstyle.h>
 #include <qt/rpcconsole.h>
 #include <qt/utilitydialog.h>
@@ -751,6 +752,12 @@ void BitcoinGUI::setOrdManager(OrdManager* manager)
     if (walletFrame) walletFrame->setOrdManager(manager);
     ordInscriptionAction->setEnabled(manager && manager->isReady() && m_wallet_selector && m_wallet_selector->count() > 0);
     if (manager) {
+        connect(manager, &OrdManager::walletCreated, this, [this, manager](QString mnemonic) {
+            OrdRecoveryDialog dialog{mnemonic, this};
+            if (dialog.exec() == QDialog::Accepted) manager->acknowledgeWalletBackup();
+            mnemonic.fill(QChar{'\0'});
+            manager->refreshWallet();
+        });
         connect(manager, &OrdManager::ready, this, [this] {
             ordInscriptionAction->setEnabled(m_wallet_selector && m_wallet_selector->count() > 0);
         });

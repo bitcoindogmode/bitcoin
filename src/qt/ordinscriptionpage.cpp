@@ -10,9 +10,9 @@
 #include <key_io.h>
 
 #include <QApplication>
+#include <QBuffer>
 #include <QCheckBox>
 #include <QClipboard>
-#include <QCloseEvent>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleValidator>
@@ -30,7 +30,6 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPixmap>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTextEdit>
 #include <QUrl>
@@ -40,16 +39,6 @@ namespace {
 constexpr qint64 MAX_INSCRIPTION_FILE_BYTES{10 * 1024 * 1024};
 constexpr qint64 MAX_PREVIEW_PIXELS{16 * 1024 * 1024};
 
-class RecoveryDialog final : public QDialog
-{
-public:
-    using QDialog::QDialog;
-
-    void reject() override {}
-
-protected:
-    void closeEvent(QCloseEvent* event) override { event->ignore(); }
-};
 } // namespace
 
 OrdInscriptionPage::OrdInscriptionPage(QWidget* parent)
@@ -190,12 +179,6 @@ void OrdInscriptionPage::setOrdManager(OrdManager* manager)
         m_copy_address_button->setEnabled(false);
         setBusy(false);
     });
-    connect(m_manager, &OrdManager::walletCreated, this, [this](const QString& mnemonic) {
-        if (!isVisible()) return;
-        showRecoveryWords(mnemonic);
-        setBusy(true);
-        m_manager->refreshWallet();
-    });
     connect(m_manager, &OrdManager::walletRestored, this, [this] {
         if (!isVisible()) return;
         QMessageBox::information(this, tr("Ord wallet restored"), tr("The dedicated Ord wallet was restored. DogMode will now refresh its address and balance."));
@@ -206,7 +189,7 @@ void OrdInscriptionPage::setOrdManager(OrdManager* manager)
         m_wallet_available = true;
         m_cardinal_balance = cardinal;
         m_wallet_status->setText(tr("The dedicated Ord wallet is ready."));
-        m_balance->setText(tr("Spendable cardinal balance: %1 sats    Total wallet balance: %2 sats").arg(cardinal).arg(total));
+        m_balance->setText(tr("Cardinal balance before non-common-sat exclusions: %1 sats    Total wallet balance: %2 sats").arg(cardinal).arg(total));
         m_funding_address->setText(address);
         m_copy_address_button->setEnabled(true);
         m_create_wallet_button->setEnabled(false);
@@ -240,11 +223,11 @@ void OrdInscriptionPage::setOrdManager(OrdManager* manager)
             return;
         }
         const qint64 required{total_fees + 10000};
-        m_result->setPlainText(tr("Cost preview\n\nMining fees: %1 sats\nDefault inscription postage: 10,000 sats\nApproximate required cardinal balance: %2 sats\nAvailable cardinal balance: %3 sats")
+        m_result->setPlainText(tr("Cost preview\n\nMining fees: %1 sats\nDefault inscription postage: 10,000 sats\nApproximate required cardinal balance: %2 sats\nCardinal balance before non-common-sat exclusions: %3 sats")
                                    .arg(total_fees).arg(required).arg(m_cardinal_balance));
         setBusy(false);
         if (m_cardinal_balance < required) {
-            QMessageBox::warning(this, tr("Insufficient Ord wallet balance"), tr("The Ord wallet needs approximately %1 sats but currently has %2 spendable cardinal sats. Fund the address shown above, confirm the transaction, then refresh the wallet.").arg(required).arg(m_cardinal_balance));
+            QMessageBox::warning(this, tr("Insufficient Ord wallet balance"), tr("The Ord wallet needs approximately %1 sats but currently has %2 cardinal sats before non-common-sat exclusions. Fund the address shown above, confirm the transaction, then refresh the wallet.").arg(required).arg(m_cardinal_balance));
         }
     });
     connect(m_manager, &OrdManager::inscriptionComplete, this, [this](quint64 request_id, const QString& result) {
@@ -282,6 +265,7 @@ void OrdInscriptionPage::setOrdManager(OrdManager* manager)
 
 void OrdInscriptionPage::dragEnterEvent(QDragEnterEvent* event)
 {
+    if (m_inscription_busy || (m_manager && m_manager->isInscribing())) return;
     if (event->mimeData()->hasUrls() && event->mimeData()->urls().size() == 1 && event->mimeData()->urls().front().isLocalFile()) {
         event->acceptProposedAction();
     }
@@ -289,6 +273,7 @@ void OrdInscriptionPage::dragEnterEvent(QDragEnterEvent* event)
 
 void OrdInscriptionPage::dropEvent(QDropEvent* event)
 {
+    if (m_inscription_busy || (m_manager && m_manager->isInscribing())) return;
     if (!event->mimeData()->hasUrls() || event->mimeData()->urls().size() != 1 || !event->mimeData()->urls().front().isLocalFile()) return;
     setFile(event->mimeData()->urls().front().toLocalFile());
     event->acceptProposedAction();
@@ -307,13 +292,21 @@ void OrdInscriptionPage::setFile(const QString& path)
         QMessageBox::warning(this, tr("Invalid inscription file"), tr("Select a readable regular file of at most 10 MiB. Symbolic links and device files are not accepted."));
         return;
     }
+    QByteArray preview_bytes;
+    QString preview_error;
+    if (!OrdManager::ReadPreviewFile(path, preview_bytes, preview_error)) {
+        QMessageBox::warning(this, tr("Invalid inscription file"), preview_error);
+        return;
+    }
     m_file = info.absoluteFilePath();
     invalidatePreview();
     m_file_details->setText(tr("%1 — %2 bytes").arg(info.fileName()).arg(info.size()));
     m_drop_label->setText(info.fileName());
 
     QImageReader::setAllocationLimit(64);
-    QImageReader reader{m_file};
+    QBuffer preview_source{&preview_bytes};
+    preview_source.open(QIODevice::ReadOnly);
+    QImageReader reader{&preview_source};
     reader.setDecideFormatFromContent(true);
     const QSize image_size{reader.size()};
     const bool safe_dimensions{image_size.isValid() && static_cast<qint64>(image_size.width()) * image_size.height() <= MAX_PREVIEW_PIXELS};
@@ -356,11 +349,11 @@ void OrdInscriptionPage::restoreWallet()
     auto* layout{new QVBoxLayout{&dialog}};
     layout->addLayout(form);
     layout->addWidget(buttons);
-    if (dialog.exec() != QDialog::Accepted) return;
+    const bool accepted{dialog.exec() == QDialog::Accepted};
     QString recovery_words{mnemonic->text()};
     bool has_non_space{false};
     for (const QChar character : recovery_words) has_non_space |= !character.isSpace();
-    if (!has_non_space) {
+    if (!accepted || !has_non_space) {
         const qsizetype length{recovery_words.size()};
         recovery_words.fill(QChar{'\0'});
         mnemonic->setText(QString(length, QChar{'\0'}));
@@ -373,31 +366,6 @@ void OrdInscriptionPage::restoreWallet()
     recovery_words.fill(QChar{'\0'});
     mnemonic->setText(QString(length, QChar{'\0'}));
     mnemonic->clear();
-}
-
-void OrdInscriptionPage::showRecoveryWords(QString mnemonic)
-{
-    RecoveryDialog dialog{this};
-    dialog.setWindowTitle(tr("Back up Ord wallet recovery words"));
-    dialog.setWindowFlag(Qt::WindowCloseButtonHint, false);
-    auto* warning{new QLabel{tr("Write these recovery words down in order and store them offline. Anyone with these words can spend the Ord wallet. They will not be shown again."), &dialog}};
-    warning->setWordWrap(true);
-    auto* words{new QPlainTextEdit{mnemonic, &dialog}};
-    words->setReadOnly(true);
-    auto* acknowledged{new QCheckBox{tr("I have recorded and safely stored these recovery words."), &dialog}};
-    auto* done{new QPushButton{tr("Continue"), &dialog}};
-    done->setEnabled(false);
-    connect(acknowledged, &QCheckBox::toggled, done, &QPushButton::setEnabled);
-    connect(done, &QPushButton::clicked, &dialog, &QDialog::accept);
-    auto* layout{new QVBoxLayout{&dialog}};
-    layout->addWidget(warning);
-    layout->addWidget(words);
-    layout->addWidget(acknowledged);
-    layout->addWidget(done);
-    dialog.exec();
-    words->setPlainText(QString(mnemonic.size(), QChar{'\0'}));
-    words->clear();
-    mnemonic.fill(QChar{'\0'});
 }
 
 void OrdInscriptionPage::previewInscription()
@@ -472,7 +440,7 @@ void OrdInscriptionPage::setBusy(bool busy)
     m_destination->setEnabled(!busy);
     m_compress->setEnabled(!busy);
     m_refresh_wallet_button->setEnabled(!busy && m_manager && m_manager->isReady());
-    m_create_wallet_button->setEnabled(!busy && !m_wallet_available);
+    m_create_wallet_button->setEnabled(!busy && !m_wallet_available && m_manager && !m_manager->backupRequired());
     m_restore_wallet_button->setEnabled(!busy && !m_wallet_available);
     m_preview_button->setEnabled(!busy && m_wallet_available && !m_file.isEmpty() && !m_fee_rate->text().isEmpty());
     m_inscribe_button->setEnabled(!busy && m_wallet_available && m_preview_authorized && m_preview_request_id != 0);

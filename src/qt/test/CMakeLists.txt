@@ -17,6 +17,8 @@ add_executable(test_bitcoin-qt
 )
 
 add_executable(ord_test_helper ord_test_helper.cpp)
+add_executable(ord_rpc_test_bridge ord_rpc_test_bridge.cpp)
+target_link_libraries(ord_rpc_test_bridge PRIVATE core_interface bitcoinqt bitcoin_node univalue Qt6::Network)
 
 add_windows_application_manifest(test_bitcoin-qt)
 
@@ -30,7 +32,7 @@ target_link_libraries(test_bitcoin-qt
 )
 
 target_link_libraries(ord_test_helper PRIVATE Qt6::Core Qt6::Network)
-add_dependencies(test_bitcoin-qt ord_test_helper)
+add_dependencies(test_bitcoin-qt ord_test_helper ord_rpc_test_bridge)
 
 import_plugins(test_bitcoin-qt)
 

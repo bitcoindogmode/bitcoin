@@ -39,8 +39,9 @@ int main(int argc, char* argv[])
         QObject::connect(&server, &QTcpServer::newConnection, &server, [&server] {
             while (QTcpSocket* socket = server.nextPendingConnection()) {
                 QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket] {
-                    socket->readAll();
-                    socket->write("HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\n1");
+                    const QByteArray request{socket->readAll()};
+                    const QByteArray body{request.contains("GET /status ") ? QByteArray{"{\"chain\":\"regtest\",\"inscription_index\":true,\"rune_index\":true,\"sat_index\":true,\"json_api\":true,\"unrecoverably_reorged\":false}"} : QByteArray{"1"}};
+                    socket->write("HTTP/1.1 200 OK\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
                     socket->disconnectFromHost();
                 });
             }
@@ -65,6 +66,14 @@ int main(int argc, char* argv[])
     if (app.arguments().contains(QStringLiteral("restore"))) {
         QTextStream input{stdin};
         return input.readLine().isEmpty() ? 24 : 0;
+    }
+    if (app.arguments().contains(QStringLiteral("cardinals"))) {
+        out << "[{\"output\":\"" << QString(64, '1') << ":0\",\"amount\":75000},{\"output\":\"" << QString(64, '2') << ":0\",\"amount\":5000}]\n";
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("sats"))) {
+        out << "[{\"output\":\"" << QString(64, '2') << ":0\",\"rarity\":\"uncommon\"}]\n";
+        return 0;
     }
     if (app.arguments().contains(QStringLiteral("inscribe"))) {
         QJsonObject result{
@@ -99,6 +108,10 @@ int main(int argc, char* argv[])
         out << "started\n";
         out.flush();
         QThread::sleep(30);
+        return 0;
+    }
+    if (mode == "environment") {
+        out << (qEnvironmentVariableIsSet("ORD_NO_INDEX_INSCRIPTIONS") || qEnvironmentVariableIsSet("ORD_INDEX") || qEnvironmentVariableIsSet("ORD_CONFIG") ? "unsafe" : "clean");
         return 0;
     }
     if (mode == "crash") std::abort();

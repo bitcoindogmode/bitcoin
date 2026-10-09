@@ -22,6 +22,12 @@ private Q_SLOTS:
     void managerRequestsAndInstallsArtifact();
     void processReportsSuccessAndFailure();
     void processBoundsOutputAndStops();
+    void processCancelDoesNotKillReplacement();
+    void processSanitizesEnvironment();
+    void recoveryRequiresAcknowledgmentAndCannotCopy();
+    void rpcGateRestrictsFundingAndWallet();
+    void rpcGateAuthenticatesAndBoundsRequests();
+    void previewReaderRejectsLinksDevicesAndOversize();
 };
 
 #endif // BITCOIN_QT_TEST_ORDTESTS_H

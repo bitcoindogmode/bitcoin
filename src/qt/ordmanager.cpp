@@ -3,12 +3,14 @@
 // file COPYING or https://opensource.org/license/mit/.
 
 #include <qt/ordmanager.h>
+#include <qt/guiutil.h>
 
 #include <addresstype.h>
 #include <chainparams.h>
 #include <consensus/amount.h>
 #include <key_io.h>
 #include <support/cleanse.h>
+#include <util/fs_helpers.h>
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -20,6 +22,7 @@
 #include <QLocale>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QTcpSocket>
 #include <QTemporaryFile>
 #include <QTimer>
@@ -56,7 +59,7 @@ bool OpenRegularFileNoFollow(const QString& path, QFile& file, QString& error)
 {
 #ifdef Q_OS_UNIX
     const QByteArray encoded{QFile::encodeName(path)};
-    const int fd{::open(encoded.constData(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW)};
+    const int fd{::open(encoded.constData(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)};
     if (fd < 0) {
         error = QObject::tr("Could not open the inscription file without following links.");
         return false;
@@ -103,12 +106,12 @@ std::optional<qint64> JsonAmount(const QJsonObject& object, const QString& name)
     return static_cast<qint64>(amount);
 }
 
-bool OrdServerReady(quint16 port)
+bool OrdServerReady(quint16 port, const QString& chain)
 {
     QTcpSocket socket;
     socket.connectToHost(QHostAddress::LocalHost, port);
     if (!socket.waitForConnected(50)) return false;
-    socket.write("GET /blockcount HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+    socket.write("GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: application/json\r\nConnection: close\r\n\r\n");
     if (!socket.waitForBytesWritten(50)) return false;
 
     QByteArray response;
@@ -123,9 +126,10 @@ bool OrdServerReady(quint16 port)
     if (status_end < 0 || header_end < status_end) return false;
     const QByteArray status{response.first(status_end)};
     if (!status.startsWith("HTTP/1.1 200 ") && !status.startsWith("HTTP/1.0 200 ")) return false;
-    bool ok{false};
-    const qlonglong block_count{response.sliced(header_end + 4).trimmed().toLongLong(&ok)};
-    return ok && block_count >= 0;
+    const QJsonObject status_object{QJsonDocument::fromJson(response.sliced(header_end + 4)).object()};
+    return status_object.value("chain").toString() == chain && status_object.value("inscription_index").toBool() &&
+           status_object.value("rune_index").toBool() && status_object.value("sat_index").toBool() &&
+           status_object.value("json_api").toBool() && !status_object.value("unrecoverably_reorged").toBool(true);
 }
 
 QString ExtractMnemonic(const QByteArray& output)
@@ -172,7 +176,7 @@ QString ExtractMnemonic(const QByteArray& output)
 }
 } // namespace
 
-OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QString chain, QObject* parent, std::optional<OrdArtifact> artifact)
+OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QString chain, QObject* parent, std::optional<OrdArtifact> artifact, OrdRpcExecutor execute_rpc, quint16 rpc_port)
     : QObject{parent},
       m_bitcoin_data_dir{std::move(bitcoin_data_dir)},
       m_bitcoin_network_dir{std::move(bitcoin_network_dir)},
@@ -181,13 +185,15 @@ OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QS
       m_index{this},
       m_server{this},
       m_wallet{this},
-      m_inscription{this}
+      m_inscription{this},
+      m_execute_rpc{std::move(execute_rpc)},
+      m_rpc_port{rpc_port}
 {
     connect(&m_index, &OrdProcess::failed, this, [this](const QString& error) {
         if (m_stopping) return;
         const AfterIndex pending{std::exchange(m_after_index, AfterIndex::NONE)};
         if (pending == AfterIndex::REFRESH_WALLET) Q_EMIT walletUnavailable(tr("Ord indexing could not be started: %1").arg(error));
-        if (pending == AfterIndex::PREVIEW_INSCRIPTION) Q_EMIT inscriptionFailed(m_inscription_request_id, tr("Ord indexing could not be started: %1").arg(error));
+        if (pending == AfterIndex::PREVIEW_INSCRIPTION) failPendingInscription(tr("Ord indexing could not be started: %1").arg(error));
         Q_EMIT failed(tr("Ord indexing could not be started: %1").arg(error));
     });
     connect(&m_index, &OrdProcess::completed, this, [this](int exit_code) {
@@ -199,26 +205,34 @@ OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QS
             const QString error{tr("Ord indexing exited with code %1.\n\n%2").arg(exit_code).arg(QString::fromUtf8(m_index.output()))};
             const AfterIndex pending{std::exchange(m_after_index, AfterIndex::NONE)};
             if (pending == AfterIndex::REFRESH_WALLET) Q_EMIT walletUnavailable(error);
-            if (pending == AfterIndex::PREVIEW_INSCRIPTION) Q_EMIT inscriptionFailed(m_inscription_request_id, error);
+            if (pending == AfterIndex::PREVIEW_INSCRIPTION) failPendingInscription(error);
             Q_EMIT failed(error);
         }
     });
     connect(&m_server, &OrdProcess::failed, this, [this](const QString& error) {
         if (m_stopping) return;
+        m_server_url.clear();
+        m_server_port = 0;
+        m_preview_authorized = false;
+        m_rpc_gate.reset();
+        m_inscription.stop();
         const QString message{tr("The local Ord server could not be started: %1").arg(error)};
         const AfterIndex pending{std::exchange(m_after_index, AfterIndex::NONE)};
         if (pending == AfterIndex::REFRESH_WALLET) Q_EMIT walletUnavailable(message);
-        if (pending == AfterIndex::PREVIEW_INSCRIPTION) Q_EMIT inscriptionFailed(m_inscription_request_id, message);
+        if (pending == AfterIndex::PREVIEW_INSCRIPTION) failPendingInscription(message);
         Q_EMIT failed(message);
     });
     connect(&m_server, &OrdProcess::completed, this, [this](int exit_code) {
         if (m_stopping) return;
         m_server_url.clear();
         m_server_port = 0;
+        m_preview_authorized = false;
+        m_rpc_gate.reset();
+        m_inscription.stop();
         const QString message{tr("The local Ord server exited with code %1.\n\n%2").arg(exit_code).arg(QString::fromUtf8(m_server.output()).trimmed())};
         const AfterIndex pending{std::exchange(m_after_index, AfterIndex::NONE)};
         if (pending == AfterIndex::REFRESH_WALLET) Q_EMIT walletUnavailable(message);
-        if (pending == AfterIndex::PREVIEW_INSCRIPTION) Q_EMIT inscriptionFailed(m_inscription_request_id, message);
+        if (pending == AfterIndex::PREVIEW_INSCRIPTION) failPendingInscription(message);
         Q_EMIT failed(message);
     });
     connect(&m_wallet, &OrdProcess::failed, this, [this](const QString& error) {
@@ -276,16 +290,26 @@ OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QS
             m_funding_address = funding_address;
             Q_EMIT walletDetails(m_cardinal_balance, m_total_balance, m_funding_address);
         } else if (operation == WalletOperation::CREATE) {
+            m_creating_wallet = false;
             QString mnemonic{ExtractMnemonic(output)};
+            Cleanse(output);
             if (mnemonic.isEmpty()) {
                 Q_EMIT walletUnavailable(tr("Ord created the wallet but did not return recovery words."));
                 Cleanse(output);
                 return;
             }
             m_funding_address.clear();
+            m_backup_pending = true;
             Q_EMIT walletCreated(mnemonic);
             mnemonic.fill(QChar{'\0'});
         } else if (operation == WalletOperation::RESTORE) {
+            if (QFileInfo::exists(backupMarker()) && !QFile::remove(backupMarker())) {
+                Q_EMIT walletUnavailable(tr("The wallet was restored, but its backup-required marker could not be cleared."));
+                Cleanse(output);
+                return;
+            }
+            m_creating_wallet = false;
+            m_backup_pending = false;
             m_funding_address.clear();
             Q_EMIT walletRestored();
         }
@@ -294,8 +318,10 @@ OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QS
     connect(&m_inscription, &OrdProcess::failed, this, [this](const QString& error) {
         const quint64 request_id{m_inscription_request_id};
         m_inscription_operation = InscriptionOperation::NONE;
+        m_broadcast_pending = false;
         m_preview_authorized = false;
         m_preview_snapshot.reset();
+        m_rpc_gate.reset();
         const bool cancelled{std::exchange(m_cancel_requested, false)};
         if (!m_stopping) {
             Q_EMIT inscriptionFailed(request_id, cancelled ? tr("The inscription operation was cancelled. If transaction creation had started, inspect the Ord wallet for a pending commit before retrying.") : tr("Ord inscription could not be started: %1").arg(error));
@@ -312,6 +338,7 @@ OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QS
             m_cancel_requested = false;
             m_preview_authorized = false;
             m_preview_snapshot.reset();
+            m_rpc_gate.reset();
             Cleanse(raw_output);
             Q_EMIT inscriptionFailed(request_id, tr("The inscription operation was cancelled. If transaction creation had started, inspect the Ord wallet for a pending commit before retrying."));
             return;
@@ -319,8 +346,44 @@ OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QS
         if (exit_code != 0) {
             m_preview_authorized = false;
             m_preview_snapshot.reset();
+            m_rpc_gate.reset();
             Cleanse(raw_output);
             Q_EMIT inscriptionFailed(request_id, tr("Ord inscription exited with code %1.\n\n%2").arg(exit_code).arg(output));
+            return;
+        }
+
+        if (operation == InscriptionOperation::CARDINALS || operation == InscriptionOperation::RARE_SATS) {
+            const QJsonDocument document{QJsonDocument::fromJson(raw_output)};
+            bool valid{document.isArray()};
+            static const QRegularExpression outpoint{QStringLiteral("^[0-9a-f]{64}:[0-9]{1,10}$")};
+            for (const QJsonValue& value : document.array()) {
+                const QString coin{value.toObject().value("output").toString()};
+                if (!outpoint.match(coin).hasMatch() || coin.section(':', 1).toULongLong() > std::numeric_limits<uint32_t>::max()) { valid = false; break; }
+                if (operation == InscriptionOperation::CARDINALS) m_safe_inputs.insert(coin);
+                else m_safe_inputs.remove(coin);
+            }
+            Cleanse(raw_output);
+            if (!valid || (operation == InscriptionOperation::RARE_SATS && m_safe_inputs.isEmpty())) {
+                m_preview_snapshot.reset();
+                Q_EMIT inscriptionFailed(request_id, tr("Could not identify funding outputs free of inscriptions, runes, and non-common sats. No transaction was broadcast."));
+                return;
+            }
+            if (operation == InscriptionOperation::CARDINALS) {
+                m_inscription_operation = InscriptionOperation::RARE_SATS;
+                QStringList arguments{baseArguments()};
+                arguments << "wallet" << "--server-url" << m_server_url << "--name" << "ord" << "sats";
+                m_inscription.start(m_executable, arguments);
+            } else {
+                m_rpc_gate = std::make_unique<OrdRpcGate>(m_execute_rpc, m_safe_inputs, QDir{m_bitcoin_network_dir}.filePath("ord/tmp"), this);
+                if (!m_rpc_gate->isReady()) {
+                    m_rpc_gate.reset();
+                    m_preview_snapshot.reset();
+                    Q_EMIT inscriptionFailed(request_id, tr("Could not start the isolated Ord funding-input gate. No transaction was broadcast."));
+                    return;
+                }
+                m_inscription_operation = InscriptionOperation::PREVIEW;
+                m_inscription.start(m_executable, inscriptionArguments(m_preview_file, m_preview_fee_rate, m_preview_destination, m_preview_compress, true));
+            }
             return;
         }
 
@@ -345,11 +408,15 @@ OrdManager::OrdManager(QString bitcoin_data_dir, QString bitcoin_network_dir, QS
                 Q_EMIT inscriptionFailed(request_id, tr("The inscription cost changed from %1 to %2 sats. Preview again before broadcasting.").arg(m_preview_total_fees).arg(*total_fees));
                 return;
             } else {
-                QTimer::singleShot(0, this, &OrdManager::runInscriptionBroadcast);
+                m_broadcast_pending = true;
+                QTimer::singleShot(0, this, [this, request_id] {
+                    if (request_id == m_inscription_request_id) runInscriptionBroadcast();
+                });
             }
         } else if (operation == InscriptionOperation::BROADCAST) {
             m_preview_authorized = false;
             m_preview_snapshot.reset();
+            m_rpc_gate.reset();
             Q_EMIT inscriptionComplete(request_id, output);
         }
         Cleanse(raw_output);
@@ -364,6 +431,7 @@ OrdManager::~OrdManager()
 bool OrdManager::verifyExecutable(const QString& path, QString& error) const
 {
     QProcess version;
+    version.setProcessEnvironment(OrdProcess::SafeEnvironment());
     version.start(path, {QStringLiteral("--version")});
     if (!version.waitForStarted(10000) || !version.waitForFinished(10000) || version.exitCode() != 0) {
         error = tr("Could not run the installed Ord executable: %1").arg(QString::fromUtf8(version.readAll()));
@@ -375,6 +443,14 @@ bool OrdManager::verifyExecutable(const QString& path, QString& error) const
 void OrdManager::start()
 {
     QString error;
+    const QString config_directory{QDir{m_bitcoin_network_dir}.filePath("ord")};
+    if (!QDir{}.mkpath(config_directory)) { Q_EMIT failed(tr("Could not create the private Ord configuration directory.")); return; }
+    m_config = std::make_unique<QTemporaryFile>(QDir{config_directory}.filePath("managed-config-XXXXXX.yaml"));
+    if (!m_config->open() || m_config->write("{}\n") != 3 || !m_config->flush()) {
+        m_config.reset();
+        Q_EMIT failed(tr("Could not create the private Ord configuration."));
+        return;
+    }
     m_artifact = m_artifact_override ? *m_artifact_override : OrdInstaller::PinnedArtifact(OrdInstaller::PlatformId(), error);
     if (!error.isEmpty()) {
         Q_EMIT failed(error);
@@ -426,15 +502,9 @@ void OrdManager::startIndex()
     if (!isReady() || m_index.isRunning() || m_server.isRunning()) return;
     const QString data_dir{QDir{m_bitcoin_network_dir}.filePath(QString::fromLatin1(ASSET_INDEX_DIRECTORY))};
     QDir{}.mkpath(data_dir);
-    m_index.start(m_executable, {
-        QStringLiteral("--chain"), m_chain,
-        QStringLiteral("--bitcoin-data-dir"), m_bitcoin_data_dir,
-        QStringLiteral("--cookie-file"), QDir{m_bitcoin_network_dir}.filePath(QStringLiteral(".cookie")),
-        QStringLiteral("--data-dir"), data_dir,
-        QStringLiteral("--index-runes"),
-        QStringLiteral("--index-sats"),
-        QStringLiteral("index"), QStringLiteral("update"),
-    });
+    QStringList arguments{baseArguments()};
+    arguments << "index" << "update";
+    m_index.start(m_executable, arguments);
 }
 
 void OrdManager::startServer()
@@ -476,7 +546,7 @@ void OrdManager::waitForServer(int attempts_remaining)
             const QString message{tr("The local Ord server did not report its loopback port in time.")};
             const AfterIndex pending{std::exchange(m_after_index, AfterIndex::NONE)};
             if (pending == AfterIndex::REFRESH_WALLET) Q_EMIT walletUnavailable(message);
-            if (pending == AfterIndex::PREVIEW_INSCRIPTION) Q_EMIT inscriptionFailed(m_inscription_request_id, message);
+            if (pending == AfterIndex::PREVIEW_INSCRIPTION) failPendingInscription(message);
             Q_EMIT failed(message);
             m_server.stop();
             return;
@@ -484,7 +554,7 @@ void OrdManager::waitForServer(int attempts_remaining)
         QTimer::singleShot(100, this, [this, attempts_remaining] { waitForServer(attempts_remaining - 1); });
         return;
     }
-    if (OrdServerReady(m_server_port)) {
+    if (OrdServerReady(m_server_port, m_chain)) {
         continueAfterIndex();
         return;
     }
@@ -492,7 +562,7 @@ void OrdManager::waitForServer(int attempts_remaining)
         const QString message{tr("The local Ord server did not become ready in time.")};
         const AfterIndex pending{std::exchange(m_after_index, AfterIndex::NONE)};
         if (pending == AfterIndex::REFRESH_WALLET) Q_EMIT walletUnavailable(message);
-        if (pending == AfterIndex::PREVIEW_INSCRIPTION) Q_EMIT inscriptionFailed(m_inscription_request_id, message);
+        if (pending == AfterIndex::PREVIEW_INSCRIPTION) failPendingInscription(message);
         Q_EMIT failed(message);
         m_server_url.clear();
         m_server.stop();
@@ -507,14 +577,30 @@ void OrdManager::continueAfterIndex()
     if (pending == AfterIndex::REFRESH_WALLET) {
         QTimer::singleShot(0, this, [this] { startWalletOperation(WalletOperation::BALANCE, {QStringLiteral("balance")}); });
     } else if (pending == AfterIndex::PREVIEW_INSCRIPTION) {
-        QTimer::singleShot(0, this, &OrdManager::runInscriptionPreview);
+        const quint64 request_id{m_inscription_request_id};
+        QTimer::singleShot(0, this, [this, request_id] {
+            if (request_id == m_inscription_request_id) runInscriptionPreview();
+        });
     }
+}
+
+void OrdManager::failPendingInscription(const QString& message)
+{
+    m_inscription_operation = InscriptionOperation::NONE;
+    m_broadcast_pending = false;
+    m_preview_authorized = false;
+    m_preview_snapshot.reset();
+    m_rpc_gate.reset();
+    Q_EMIT inscriptionFailed(m_inscription_request_id, message);
 }
 
 QStringList OrdManager::baseArguments() const
 {
     return {
         QStringLiteral("--chain"), m_chain,
+        QStringLiteral("--config"), m_config ? m_config->fileName() : QString{},
+        QStringLiteral("--index"), QDir{m_bitcoin_network_dir}.filePath(QString::fromLatin1(ASSET_INDEX_DIRECTORY) + "/index.redb"),
+        QStringLiteral("--bitcoin-rpc-url"), QStringLiteral("127.0.0.1:%1").arg(m_rpc_port),
         QStringLiteral("--bitcoin-data-dir"), m_bitcoin_data_dir,
         QStringLiteral("--cookie-file"), QDir{m_bitcoin_network_dir}.filePath(QStringLiteral(".cookie")),
         QStringLiteral("--data-dir"), QDir{m_bitcoin_network_dir}.filePath(QString::fromLatin1(ASSET_INDEX_DIRECTORY)),
@@ -526,6 +612,10 @@ QStringList OrdManager::baseArguments() const
 void OrdManager::startWalletOperation(WalletOperation operation, const QStringList& arguments, SecureString input)
 {
     if (!isReady() || m_wallet.isRunning()) return;
+    if ((operation == WalletOperation::BALANCE || operation == WalletOperation::RECEIVE) && backupRequired()) {
+        Q_EMIT walletUnavailable(tr("Back up the Ord wallet before obtaining a funding address."));
+        return;
+    }
     m_wallet_operation = operation;
     QStringList command{baseArguments()};
     command << QStringLiteral("wallet") << QStringLiteral("--server-url") << m_server_url
@@ -536,6 +626,7 @@ void OrdManager::startWalletOperation(WalletOperation operation, const QStringLi
 void OrdManager::refreshWallet()
 {
     if (!isReady()) return;
+    if (backupRequired()) { Q_EMIT walletUnavailable(tr("Ord wallet backup has not been acknowledged. Funding and inscriptions are disabled. If creation was interrupted, restore or back up the wallet before using it.")); return; }
     if (m_server.isRunning() && !m_server_url.isEmpty()) {
         startWalletOperation(WalletOperation::BALANCE, {QStringLiteral("balance")});
         return;
@@ -546,7 +637,37 @@ void OrdManager::refreshWallet()
 
 void OrdManager::createWallet()
 {
+    if (!isReady() || m_wallet.isRunning()) return;
+    if (backupRequired()) {
+        Q_EMIT walletUnavailable(tr("An Ord wallet backup is still required. A new wallet cannot be created until the existing wallet is backed up or restored."));
+        return;
+    }
+    QSaveFile marker{backupMarker()};
+    if (!marker.open(QIODevice::WriteOnly) || marker.write("Backup acknowledgment required.\n") < 0 || !marker.commit()) {
+        Q_EMIT walletUnavailable(tr("Could not record the required Ord wallet backup. Wallet creation was not started."));
+        return;
+    }
+    // Persist the backup gate before Core can persist a newly generated wallet.
+    FILE* marker_file{fsbridge::fopen(GUIUtil::QStringToPath(backupMarker()), "rb+")};
+    const bool persisted{marker_file && FileCommit(marker_file)};
+    if (marker_file) std::fclose(marker_file);
+    if (!persisted) {
+        Q_EMIT walletUnavailable(tr("Could not persist the required Ord wallet backup gate. Wallet creation was not started."));
+        return;
+    }
+    DirectoryCommit(GUIUtil::QStringToPath(QFileInfo{backupMarker()}.absolutePath()));
+    m_creating_wallet = true;
     startWalletOperation(WalletOperation::CREATE, {QStringLiteral("create")});
+}
+
+QString OrdManager::backupMarker() const { return QDir{m_bitcoin_network_dir}.filePath("ord/backup-required"); }
+bool OrdManager::backupRequired() const { return m_creating_wallet || QFileInfo::exists(backupMarker()); }
+
+bool OrdManager::acknowledgeWalletBackup()
+{
+    if (!m_backup_pending || !QFile::remove(backupMarker())) return false;
+    m_backup_pending = false;
+    return true;
 }
 
 void OrdManager::restoreWallet(const QString& mnemonic)
@@ -564,6 +685,9 @@ void OrdManager::restoreWallet(const QString& mnemonic)
 QStringList OrdManager::inscriptionArguments(const QString& file, const QString& fee_rate, const QString& destination, bool compress, bool dry_run) const
 {
     QStringList arguments{baseArguments()};
+    if (!m_rpc_gate || !m_rpc_gate->isReady()) return {};
+    arguments[arguments.indexOf("--bitcoin-rpc-url") + 1] = m_rpc_gate->url();
+    arguments[arguments.indexOf("--cookie-file") + 1] = m_rpc_gate->cookiePath();
     arguments << QStringLiteral("wallet") << QStringLiteral("--server-url") << m_server_url
               << QStringLiteral("--name") << QStringLiteral("ord")
               << QStringLiteral("inscribe") << QStringLiteral("--fee-rate") << fee_rate
@@ -585,6 +709,20 @@ bool OrdManager::validateInscriptionSettings(const QString& fee_rate, const QStr
     }
     if (!destination.isEmpty() && !IsValidDestinationString(destination.toStdString(), Params())) {
         error = tr("The inscription destination is not a valid address for the active Bitcoin network.");
+        return false;
+    }
+    return true;
+}
+
+bool OrdManager::ReadPreviewFile(const QString& path, QByteArray& bytes, QString& error)
+{
+    QFile source{path};
+    bytes.clear();
+    if (!OpenRegularFileNoFollow(path, source, error)) return false;
+    bytes = source.read(MAX_INSCRIPTION_FILE_BYTES + 1);
+    if (source.error() != QFileDevice::NoError || !source.atEnd() || bytes.size() > MAX_INSCRIPTION_FILE_BYTES) {
+        bytes.clear();
+        error = tr("Could not read a regular inscription file within the 10 MiB limit.");
         return false;
     }
     return true;
@@ -675,10 +813,13 @@ quint64 OrdManager::previewInscription(const QString& file, const QString& fee_r
     if (m_next_request_id == 0) ++m_next_request_id;
     QString error;
     if (!isReady()) error = tr("Ord is not installed yet.");
-    else if (m_inscription.isRunning()) error = tr("An Ord inscription operation is already in progress.");
+    else if (backupRequired()) error = tr("Back up the Ord wallet before previewing or broadcasting inscriptions.");
+    else if (!m_execute_rpc) error = tr("The wallet-scoped Ord RPC safety gate is unavailable.");
+    else if (isInscribing()) error = tr("An Ord inscription operation is already in progress.");
     else {
         m_inscription_request_id = request_id;
         m_preview_authorized = false;
+        m_cancel_requested = false;
         m_preview_snapshot.reset();
         if (!createInscriptionSnapshot(file, fee_rate, destination, compress, error) && error.isEmpty()) {
             error = tr("Could not prepare the inscription preview.");
@@ -702,7 +843,14 @@ quint64 OrdManager::previewInscription(const QString& file, const QString& fee_r
 
 void OrdManager::runInscriptionPreview()
 {
-    m_inscription.start(m_executable, inscriptionArguments(m_preview_file, m_preview_fee_rate, m_preview_destination, m_preview_compress, true));
+    if (m_stopping || m_inscription_operation != InscriptionOperation::PREVIEW || !m_preview_snapshot || m_inscription.isRunning()) return;
+    m_after_index = AfterIndex::NONE;
+    m_rpc_gate.reset();
+    m_safe_inputs.clear();
+    m_inscription_operation = InscriptionOperation::CARDINALS;
+    QStringList arguments{baseArguments()};
+    arguments << "wallet" << "--server-url" << m_server_url << "--name" << "ord" << "cardinals";
+    m_inscription.start(m_executable, arguments);
 }
 
 bool OrdManager::previewMatches(quint64 request_id, const QString& file, const QString& fee_rate, const QString& destination, bool compress, QString& error) const
@@ -723,14 +871,15 @@ bool OrdManager::previewMatches(quint64 request_id, const QString& file, const Q
 
 void OrdManager::invalidatePreview(quint64 request_id)
 {
-    if (request_id == 0 || request_id != m_inscription_request_id || m_inscription.isRunning()) return;
+    if (request_id == 0 || request_id != m_inscription_request_id || isInscribing()) return;
     m_preview_authorized = false;
     m_preview_snapshot.reset();
+    m_rpc_gate.reset();
 }
 
 void OrdManager::inscribe(quint64 request_id)
 {
-    if (!isReady() || m_inscription.isRunning() || !m_preview_authorized || request_id != m_inscription_request_id || !m_preview_snapshot) {
+    if (!isReady() || backupRequired() || m_inscription.isRunning() || !m_preview_authorized || request_id != m_inscription_request_id || !m_preview_snapshot || !m_rpc_gate || !m_rpc_gate->isReady()) {
         Q_EMIT inscriptionFailed(request_id, tr("A matching successful cost preview is required before broadcasting."));
         return;
     }
@@ -743,21 +892,38 @@ void OrdManager::inscribe(quint64 request_id)
 
 void OrdManager::runInscriptionBroadcast()
 {
-    if (m_stopping || !m_preview_snapshot || m_inscription.isRunning()) return;
+    if (!std::exchange(m_broadcast_pending, false)) return;
+    if (m_stopping) return;
+    if (backupRequired() || !m_preview_snapshot || m_inscription.isRunning() || !m_rpc_gate || !m_rpc_gate->isReady()) {
+        failPendingInscription(tr("The authorized Ord session is no longer available. Preview again before broadcasting."));
+        return;
+    }
     m_inscription_operation = InscriptionOperation::BROADCAST;
     m_inscription.start(m_executable, inscriptionArguments(m_preview_file, m_preview_fee_rate, m_preview_destination, m_preview_compress, false));
 }
 
 void OrdManager::cancelInscription()
 {
-    if (!m_inscription.isRunning()) return;
-    m_cancel_requested = true;
-    m_inscription.stop();
+    if (!isInscribing()) return;
+    m_preview_authorized = false;
+    m_rpc_gate.reset();
+    m_broadcast_pending = false;
+    m_after_index = AfterIndex::NONE;
+    if (m_inscription.isRunning()) {
+        m_cancel_requested = true;
+        m_inscription.stop();
+    } else {
+        m_inscription_operation = InscriptionOperation::NONE;
+        m_preview_snapshot.reset();
+        Q_EMIT inscriptionFailed(m_inscription_request_id, tr("The inscription operation was cancelled before transaction creation."));
+    }
 }
 
 void OrdManager::stop()
 {
     m_stopping = true;
+    m_broadcast_pending = false;
+    m_rpc_gate.reset();
     m_index.stop();
     m_server.stop();
     m_wallet.stop();

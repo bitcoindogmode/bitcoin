@@ -7,6 +7,7 @@
 #include <qt/bitcoin.h>
 
 #include <chainparams.h>
+#include <chainparamsbase.h>
 #include <common/args.h>
 #include <common/init.h>
 #include <common/system.h>
@@ -383,7 +384,9 @@ void BitcoinApplication::startOrd()
         GUIUtil::PathToQString(gArgs.GetDataDirBase()),
         GUIUtil::PathToQString(gArgs.GetDataDirNet()),
         chain,
-        this);
+        this, std::nullopt,
+        [this](const std::string& method, const UniValue& params) { return node().executeRpc(method, params, "/wallet/ord"); },
+        static_cast<uint16_t>(gArgs.GetIntArg("-rpcport", BaseParams().RPCPort())));
     window->setOrdManager(m_ord_manager.get());
     connect(m_ord_manager.get(), &OrdManager::progress, window, [this](const QString& title, int percentage) {
         window->showProgress(title, percentage);

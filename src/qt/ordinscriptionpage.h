@@ -36,7 +36,6 @@ private:
     void setFile(const QString& path);
     void createWallet();
     void restoreWallet();
-    void showRecoveryWords(QString mnemonic);
     void previewInscription();
     void createInscription();
     void invalidatePreview();
