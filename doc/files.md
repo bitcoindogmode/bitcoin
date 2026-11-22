@@ -1,4 +1,4 @@
-# Bitcoin Core file system
+# DOG Mode file system
 
 **Contents**
 
@@ -22,7 +22,7 @@
 
 ## Data directory location
 
-The data directory is the default location where the Bitcoin Core files are stored.
+The data directory is the default location where the DOG Mode files are stored.
 
 1. The default data directory paths for supported platforms are:
 
@@ -104,7 +104,7 @@ Subdirectory | File                 | Description
 
 ## Legacy subdirectories and files
 
-These subdirectories and files are no longer used by Bitcoin Core:
+These subdirectories and files are no longer used by DOG Mode:
 
 Path           | Description | Repository notes
 ---------------|-------------|-----------------
@@ -133,7 +133,7 @@ Subdirectory | File(s)           | Description
 
 ## Installed Files
 
-This table describes the files installed by Bitcoin Core across different platforms.
+This table describes the files installed by DOG Mode across different platforms.
 
 | **Path**                                                   | **Description**                                                             |
 |------------------------------------------------------------|-----------------------------------------------------------------------------|

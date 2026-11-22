@@ -1,4 +1,4 @@
-When Bitcoin Core automatically opens outgoing P2P connections, it chooses
+When DOG Mode automatically opens outgoing P2P connections, it chooses
 a peer (address and port) from its list of potential peers. This list is
 populated with unchecked data gossiped over the P2P network by other peers.
 
@@ -8,7 +8,7 @@ As a result, this service may occasionally get connection attempts from Bitcoin
 nodes.
 
 "Bad" ports are ones used by services which are usually not open to the public
-and usually require authentication. A connection attempt (by Bitcoin Core,
+and usually require authentication. A connection attempt (by DOG Mode,
 trying to connect because it thinks there is a Bitcoin node on that
 address:port) to such service may be considered a malicious action by an
 ultra-paranoid administrator. An example for such a port is 22 (ssh). On the
@@ -16,7 +16,7 @@ other hand, connection attempts to public services that usually do not require
 authentication are unlikely to be considered a malicious action,
 e.g. port 80 (http).
 
-Below is a list of "bad" ports which Bitcoin Core avoids when choosing a peer to
+Below is a list of "bad" ports which DOG Mode avoids when choosing a peer to
 connect to. If a node is listening on such a port, it will likely receive fewer
 incoming connections.
 

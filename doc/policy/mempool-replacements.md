@@ -50,7 +50,7 @@ other consensus and policy rules, each of the following conditions are met:
   **v0.12.0** ([PR 6871](https://github.com/bitcoin/bitcoin/pull/6871)).
 
 * [BIP125](https://github.com/bitcoin/bips/blob/master/bip-0125.mediawiki) defined based on
-  Bitcoin Core implementation.
+  DOG Mode implementation.
 
 * The incremental relay feerate used to calculate the required additional fees is distinct from
   `-minrelaytxfee` and configurable using `-incrementalrelayfee`

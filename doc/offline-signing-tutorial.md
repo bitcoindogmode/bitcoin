@@ -1,6 +1,6 @@
 # Offline Signing Tutorial
 
-This tutorial will describe how to use two instances of Bitcoin Core, one online and one offline, to greatly increase security by not having private keys reside on a networked device.
+This tutorial will describe how to use two instances of DOG Mode, one online and one offline, to greatly increase security by not having private keys reside on a networked device.
 
 Maintaining an air-gap between private keys and any network connections drastically reduces the opportunity for those keys to be exfiltrated from the user.
 

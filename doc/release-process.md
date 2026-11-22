@@ -116,7 +116,7 @@ Generate list of authors:
 
 ### Setup and perform Guix builds
 
-Checkout the Bitcoin Core version you'd like to build:
+Checkout the DOG Mode version you'd like to build:
 
 ```sh
 pushd ./bitcoin

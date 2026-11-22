@@ -1,7 +1,7 @@
 Expectations for DNS Seed operators
 ====================================
 
-Bitcoin Core attempts to minimize the level of trust in DNS seeds,
+DOG Mode attempts to minimize the level of trust in DNS seeds,
 but DNS seeds still pose a small amount of risk for the network.
 As such, DNS seeds must be run by entities which have some minimum
 level of trust within the Bitcoin community.

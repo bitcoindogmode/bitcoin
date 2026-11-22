@@ -1,6 +1,6 @@
-# CJDNS support in Bitcoin Core
+# CJDNS support in DOG Mode
 
-It is possible to run Bitcoin Core over CJDNS, an encrypted IPv6 network that
+It is possible to run DOG Mode over CJDNS, an encrypted IPv6 network that
 uses public-key cryptography for address allocation and a distributed hash table
 for routing.
 
@@ -9,7 +9,7 @@ for routing.
 CJDNS is like a distributed, shared VPN with multiple entry points where every
 participant can reach any other participant. All participants use addresses from
 the `fc00::/8` network (reserved IPv6 range). Installation and configuration is
-done outside of Bitcoin Core, similarly to a VPN (either in the host/OS or on
+done outside of DOG Mode, similarly to a VPN (either in the host/OS or on
 the network router). See https://github.com/cjdelisle/cjdns#readme and
 https://github.com/hyperboria/docs#hyperboriadocs for more information.
 
@@ -30,7 +30,7 @@ To install and set up CJDNS, follow the instructions at
 https://github.com/cjdelisle/cjdns#how-to-install-cjdns.
 
 You need to initiate an outbound connection to a peer on the CJDNS network
-before it will work with your Bitcoin Core node. This is described in steps
+before it will work with your DOG Mode node. This is described in steps
 ["2. Find a friend"](https://github.com/cjdelisle/cjdns#2-find-a-friend) and
 ["3. Connect your node to your friend's
 node"](https://github.com/cjdelisle/cjdns#3-connect-your-node-to-your-friends-node)
@@ -65,19 +65,19 @@ with some additional setup.
 The network connection can be checked by running `./tools/peerStats` from the
 CJDNS directory.
 
-## Run Bitcoin Core with CJDNS
+## Run DOG Mode with CJDNS
 
-Once you are connected to the CJDNS network, the following Bitcoin Core
+Once you are connected to the CJDNS network, the following DOG Mode
 configuration option makes CJDNS peers automatically reachable:
 
 ```
 -cjdnsreachable
 ```
 
-When enabled, this option tells Bitcoin Core that it is running in an
+When enabled, this option tells DOG Mode that it is running in an
 environment where a connection to an `fc00::/8` address will be to the CJDNS
 network instead of to an [RFC4193](https://datatracker.ietf.org/doc/html/rfc4193)
-IPv6 local network. This helps Bitcoin Core perform better address management:
+IPv6 local network. This helps DOG Mode perform better address management:
   - Your node can consider incoming `fc00::/8` connections to be from the CJDNS
     network rather than from an IPv6 private one.
   - If one of your node's local addresses is `fc00::/8`, then it can choose to
@@ -93,7 +93,7 @@ Make automatic outbound connections only to CJDNS addresses. Inbound and manual
 connections are not affected by this option. It can be specified multiple times
 to allow multiple networks, e.g. onlynet=cjdns, onlynet=i2p, onlynet=onion.
 
-CJDNS support was added to Bitcoin Core in version 23.0 and there may be fewer
+CJDNS support was added to DOG Mode in version 23.0 and there may be fewer
 CJDNS peers than Tor or IP ones. You can use `bitcoin-cli -addrinfo` to see the
 number of CJDNS addresses known to your node.
 
@@ -103,9 +103,9 @@ the networks has issues. There are a number of ways to configure this; see
 [doc/tor.md](/doc/tor.md) for
 details.
 
-## CJDNS-related information in Bitcoin Core
+## CJDNS-related information in DOG Mode
 
-There are several ways to see your CJDNS address in Bitcoin Core:
+There are several ways to see your CJDNS address in DOG Mode:
 - in the "Local addresses" output of CLI `-netinfo`
 - in the "localaddresses" output of RPC `getnetworkinfo`
 

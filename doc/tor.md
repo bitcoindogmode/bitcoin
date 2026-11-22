@@ -1,19 +1,19 @@
 # TOR SUPPORT IN BITCOIN
 
-It is possible to run Bitcoin Core as a Tor onion service, and connect to such services.
+It is possible to run DOG Mode as a Tor onion service, and connect to such services.
 
 The following directions assume you have a Tor proxy running on port 9050. Many distributions default to having a SOCKS proxy listening on port 9050, but others may not. In particular, the Tor Browser Bundle defaults to listening on port 9150.
 ## Compatibility
 
-- Starting with version 22.0, Bitcoin Core only supports Tor version 3 hidden
-  services (Tor v3). Tor v2 addresses are ignored by Bitcoin Core and neither
+- Starting with version 22.0, DOG Mode only supports Tor version 3 hidden
+  services (Tor v3). Tor v2 addresses are ignored by DOG Mode and neither
   relayed nor stored.
 
 - Tor removed v2 support beginning with version 0.4.6.
 
-## How to see information about your Tor configuration via Bitcoin Core
+## How to see information about your Tor configuration via DOG Mode
 
-There are several ways to see your local onion address in Bitcoin Core:
+There are several ways to see your local onion address in DOG Mode:
 - in the "Local addresses" output of CLI `-netinfo`
 - in the "localaddresses" output of RPC `getnetworkinfo`
 - in the debug log (grep for "AddLocal"; the Tor address ends in `.onion`)
@@ -29,9 +29,9 @@ You can use the `getnodeaddresses` RPC to fetch a number of onion peers known to
 
 `bitcoin rpc` can also be substituted for `bitcoin-cli`.
 
-## 1. Run Bitcoin Core behind a Tor proxy
+## 1. Run DOG Mode behind a Tor proxy
 
-The first step is running Bitcoin Core behind a Tor proxy. This will already anonymize all
+The first step is running DOG Mode behind a Tor proxy. This will already anonymize all
 outgoing connections, but more is possible.
 
     -proxy=ip[:port]
@@ -88,15 +88,15 @@ In a typical situation, this suffices to run behind a Tor proxy:
 
 `bitcoin node` or `bitcoin gui` can also be substituted for `bitcoind`.
 
-## 2. Automatically create a Bitcoin Core onion service
+## 2. Automatically create a DOG Mode onion service
 
-Bitcoin Core makes use of Tor's control socket API to create and destroy
+DOG Mode makes use of Tor's control socket API to create and destroy
 ephemeral onion services programmatically. This means that if Tor is running and
-proper authentication has been configured, Bitcoin Core automatically creates an
+proper authentication has been configured, DOG Mode automatically creates an
 onion service to listen on. The goal is to increase the number of available
 onion nodes.
 
-This feature is enabled by default if Bitcoin Core is listening (`-listen`) and
+This feature is enabled by default if DOG Mode is listening (`-listen`) and
 it requires a Tor connection to work. It can be explicitly disabled with
 `-listenonion=0`. If it is not disabled, it can be configured using the
 `-torcontrol` and `-torpassword` settings.
@@ -174,7 +174,7 @@ Manual](https://2019.www.torproject.org/docs/tor-manual.html.en) for more
 details).
 
 
-## 3. Manually create a Bitcoin Core onion service
+## 3. Manually create a DOG Mode onion service
 
 You can also manually configure your node to be reachable from the Tor network.
 Add these lines to your `/etc/tor/torrc` (or equivalent config file):
@@ -233,7 +233,7 @@ for normal IPv4/IPv6 communication, use:
 
 ## 4. Privacy recommendations
 
-- Do not add anything but Bitcoin Core ports to the onion service created in section 3.
+- Do not add anything but DOG Mode ports to the onion service created in section 3.
   If you run a web service too, create a new onion service for that.
   Otherwise it is trivial to link them, which may reduce privacy. Onion
   services created automatically (as in section 2) always have only one port

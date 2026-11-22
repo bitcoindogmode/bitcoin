@@ -1,6 +1,6 @@
-# User-space, Statically Defined Tracing (USDT) for Bitcoin Core
+# User-space, Statically Defined Tracing (USDT) for DOG Mode
 
-Bitcoin Core includes statically defined tracepoints to allow for more
+DOG Mode includes statically defined tracepoints to allow for more
 observability during development, debugging, code review, and production usage.
 These tracepoints make it possible to keep track of custom statistics and
 enable detailed monitoring of otherwise hidden internals. They have
@@ -171,7 +171,7 @@ Arguments passed:
 
 The following tracepoints cover the in-memory UTXO cache. UTXOs are, for example,
 added to and removed (spent) from the cache when we connect a new block.
-**Note**: Bitcoin Core uses temporary clones of the _main_ UTXO cache
+**Note**: DOG Mode uses temporary clones of the _main_ UTXO cache
 (`chainstate.CoinsTip()`). For example, the RPCs `generateblock` and
 `getblocktemplate` call `TestBlockValidity()`, which applies the UTXO set
 changes to a temporary cache. Similarly, mempool consistency checks, which are
@@ -323,7 +323,7 @@ Arguments passed:
 1. Transaction ID (hash) as `pointer to unsigned chars` (i.e. 32 bytes in little-endian)
 2. Reject reason as `pointer to C-style String` (max. length 118 characters)
 
-## Adding tracepoints to Bitcoin Core
+## Adding tracepoints to DOG Mode
 
 Use the `TRACEPOINT` macro to add a new tracepoint. If not yet included, include
 `util/trace.h` (defines the tracepoint macros) with `#include <util/trace.h>`.
@@ -427,7 +427,7 @@ USDT support.
 
 ### GDB - GNU Project Debugger
 
-To list probes in Bitcoin Core, use `info probes` in `gdb`:
+To list probes in DOG Mode, use `info probes` in `gdb`:
 
 ```
 $ gdb ./build/bin/bitcoind
@@ -442,7 +442,7 @@ stap validation block_connected  0x00000000002fb10c 0x0000000000d29bd8 /build/bi
 
 ### With `readelf`
 
-The `readelf` tool can be used to display the USDT tracepoints in Bitcoin Core.
+The `readelf` tool can be used to display the USDT tracepoints in DOG Mode.
 Look for the notes with the description `NT_STAPSDT`.
 
 ```

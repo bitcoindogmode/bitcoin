@@ -2,7 +2,7 @@
 
 Tool for performing various operations on textual and binary asmap files,
 particularly encoding/compressing the raw data to the binary format that can
-be used in Bitcoin Core with the `-asmap` option.
+be used in DOG Mode with the `-asmap` option.
 
 Example usage:
 ```
@@ -18,7 +18,7 @@ Consider using `pypy3` for a faster run time.
 ### Encoding and Decoding
 
 ASmap files are somewhat large in text form, and need to be encoded
-to binary before being used with Bitcoin Core.
+to binary before being used with DOG Mode.
 
 The `encode` command takes an ASmap and an output file.
 

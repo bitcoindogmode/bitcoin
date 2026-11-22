@@ -9,7 +9,7 @@ If this becomes continuous ("thrashing"), `bitcoind` can slow to a crawl, especi
 
 If you see sustained swap I/O while `bitcoind` runs, restart with a lower `-dbcache`.
 If needed, also reduce `-maxmempool`, `-maxconnections`, or use `-blocksonly`.
-Bitcoin Core may warn at startup when `-dbcache` looks too large for the detected system memory.
+DOG Mode may warn at startup when `-dbcache` looks too large for the detected system memory.
 
 ## In-memory caches
 
@@ -21,7 +21,7 @@ The size of some in-memory caches can be reduced. As caches trade off memory usa
 
 ## Memory pool
 
-- In Bitcoin Core there is a memory pool limiter which can be configured with `-maxmempool=<n>`, where `<n>` is the size in MB (1000). The default value is `300`.
+- In DOG Mode there is a memory pool limiter which can be configured with `-maxmempool=<n>`, where `<n>` is the size in MB (1000). The default value is `300`.
   - The minimum value for `-maxmempool` is 5.
   - A lower maximum mempool size means that transactions will be evicted sooner. This will affect any uses of `bitcoind` that process unconfirmed transactions.
 
@@ -60,4 +60,4 @@ export MALLOC_ARENA_MAX=1
 bitcoind
 ```
 
-The behavior was introduced to increase CPU locality of allocated memory and performance with concurrent allocation, so this setting could in theory reduce performance. However, in Bitcoin Core very little parallel allocation happens, so the impact is expected to be small or absent.
+The behavior was introduced to increase CPU locality of allocated memory and performance with concurrent allocation, so this setting could in theory reduce performance. However, in DOG Mode very little parallel allocation happens, so the impact is expected to be small or absent.
