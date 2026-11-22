@@ -10,7 +10,7 @@ prevent having connections dominated by peers at the same large-scale hoster,
 for example, since such companies usually control many diverse IP ranges.
 In order to use ASMap, the mapping between IP prefixes and AS Numbers needs
 to be available. This mapping data can be provided through an external file
-but Bitcoin Core also embeds a default map in its builds to make the feature
+but DOG Mode also embeds a default map in its builds to make the feature
 available to users when they are unable to provide a file.
 
 ## Data sourcing and tools
@@ -31,7 +31,7 @@ and only used for IP space that is not covered by RPKI and IRR.
 The process in which the Kartograf project parses, processes and merges these
 data sources is deterministic. Given the raw download files from these
 different sources, anyone can build their own map file and verify the content
-matches with other users' results. Before the map is usable by Bitcoin Core
+matches with other users' results. Before the map is usable by DOG Mode
 it needs to be encoded as well. This is done using `asmap-tool.py` in `contrib/asmap`
 and this step is deterministic as well.
 

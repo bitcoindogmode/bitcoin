@@ -1,4 +1,4 @@
-# PSBT Howto for Bitcoin Core
+# PSBT Howto for DOG Mode
 
 Since Bitcoin Core 0.17, an RPC interface exists for Partially Signed Bitcoin
 Transactions (PSBTs, as specified in
@@ -46,7 +46,7 @@ The names above in bold are the names of the roles defined in BIP174. They're
 useful in understanding the underlying steps, but in practice, software and
 hardware implementations will typically implement multiple roles simultaneously.
 
-## PSBT in Bitcoin Core
+## PSBT in DOG Mode
 
 ### RPCs
 
@@ -94,6 +94,6 @@ hardware implementations will typically implement multiple roles simultaneously.
 
 ### Workflows
 
-#### Multisig with multiple Bitcoin Core instances
+#### Multisig with multiple DOG Mode instances
 
 For a quick start see [Basic M-of-N multisig example using descriptor wallets and PSBTs](./descriptors.md#basic-multisig-example).
