@@ -29,6 +29,9 @@ def main():
         "-B",
         build_dir,
         "-Werror=dev",
+        # CMake 4.5 reports non-target directives (e.g. include_directories) as
+        # developer warnings, including in subtrees; do not turn those into errors.
+        "-Wno-error=non-target-directive",
         # Use clang++, because it is a bit faster and uses less memory than g++
         "-DCMAKE_C_COMPILER=clang",
         "-DCMAKE_CXX_COMPILER=clang++",

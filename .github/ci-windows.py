@@ -71,6 +71,9 @@ def generate(ci_type):
         "-B",
         "build",
         "-Werror=dev",
+        # CMake 4.5 reports non-target directives (e.g. include_directories) as
+        # developer warnings, including in subtrees; do not turn those into errors.
+        "-Wno-error=non-target-directive",
         "--preset",
         "vs2026",
     ] + GENERATE_OPTIONS[ci_type]
